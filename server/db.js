@@ -107,6 +107,23 @@ function initDatabase() {
     db.exec('ALTER TABLE order_items ADD COLUMN tax_amount REAL DEFAULT 0.0');
   } catch (e) {}
 
+  // Multi-user authentication & Account data scoping
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      shop_name TEXT NOT NULL DEFAULT 'MS Store',
+      phone TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  try { db.exec('ALTER TABLE products ADD COLUMN user_email TEXT DEFAULT ""'); } catch (e) {}
+  try { db.exec('ALTER TABLE orders ADD COLUMN user_email TEXT DEFAULT ""'); } catch (e) {}
+  try { db.exec('ALTER TABLE stock_logs ADD COLUMN user_email TEXT DEFAULT ""'); } catch (e) {}
+
   // Ensure default settings exist
   const existingSettings = db.prepare('SELECT id FROM settings WHERE id = 1').get();
   if (!existingSettings) {

@@ -3,13 +3,20 @@ import { localStore } from './localStore';
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 let useLocalFallback = false;
 
-async function requestWithFallback(path, options, fallbackFn) {
+async function requestWithFallback(path, options = {}, fallbackFn) {
   if (useLocalFallback) {
     return fallbackFn();
   }
 
+  const currentUser = localStore.getCurrentUser();
+  const headers = {
+    ...(options.headers || {}),
+    ...(currentUser?.email ? { 'x-user-email': currentUser.email } : {}),
+  };
+  const enrichedOptions = { ...options, headers };
+
   try {
-    const res = await fetch(`${API_BASE}${path}`, options);
+    const res = await fetch(`${API_BASE}${path}`, enrichedOptions);
     
     // Check if response is valid JSON from backend
     const contentType = res.headers.get('content-type') || '';
@@ -152,26 +159,55 @@ export const api = {
     return requestWithFallback(`/orders/${id}`, {}, () => localStore.getOrderById(id));
   },
 
-  // Authentication & Profile
-  async getAuth() {
-    return requestWithFallback('/auth/profile', {}, () => localStore.getAuth());
+  // User Authentication & Account Registry
+  async getCurrentUser() {
+    return requestWithFallback('/auth/me', {}, () => localStore.getCurrentUser());
   },
 
-  async saveAuth(authData) {
+  async signup(userData) {
     return requestWithFallback(
-      '/auth/profile',
+      '/auth/signup',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authData),
+        body: JSON.stringify(userData),
       },
-      () => localStore.saveAuth(authData)
+      () => localStore.signup(userData)
     );
   },
 
+  async login(email, password) {
+    return requestWithFallback(
+      '/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      },
+      () => localStore.login(email, password)
+    );
+  },
+
+  async logout() {
+    localStore.logout();
+    return requestWithFallback(
+      '/auth/logout',
+      { method: 'POST' },
+      () => ({ success: true })
+    );
+  },
+
+  // Legacy auth compatibility
+  async getAuth() {
+    return this.getCurrentUser();
+  },
+
+  async saveAuth(authData) {
+    return this.signup(authData);
+  },
+
   async clearAuth() {
-    localStore.clearAuth();
-    return { success: true };
+    return this.logout();
   },
 
   // Wipe all store data to start fresh (Zero dummy data)

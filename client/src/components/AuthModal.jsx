@@ -1,131 +1,188 @@
 import React, { useState } from 'react';
-import { Mail, Lock, User, Store, Phone, ShieldCheck, KeyRound, Sparkles, ArrowRight, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Mail,
+  Lock,
+  User,
+  Store,
+  Phone,
+  ShieldCheck,
+  KeyRound,
+  Sparkles,
+  ArrowRight,
+  LogIn,
+  UserPlus,
+  AlertCircle,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { api } from '../services/api';
 
-export default function AuthModal({ auth, onAuthenticated, settings }) {
-  const isProfileConfigured = Boolean(auth?.owner_email && auth?.owner_pin);
+export default function AuthModal({ onAuthenticated }) {
+  const [activeTab, setActiveTab] = useState('login'); // 'login' | 'signup'
 
-  const [mode, setMode] = useState(isProfileConfigured ? 'unlock' : 'setup'); // 'setup' | 'unlock'
-  
-  // Setup fields
-  const [formData, setFormData] = useState({
-    owner_name: auth?.owner_name || '',
-    owner_email: auth?.owner_email || '',
-    owner_phone: auth?.owner_phone || settings?.phone || '',
-    shop_name: auth?.shop_name || settings?.shop_name || 'MS Store',
-    owner_pin: auth?.owner_pin || '',
-    confirm_pin: auth?.owner_pin || '',
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Signup form state
+  const [signupData, setSignupData] = useState({
+    email: '',
+    password: '',
+    confirm_password: '',
+    name: '',
+    shop_name: 'MS Store',
+    phone: '',
   });
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
 
-  // Unlock field
-  const [enteredPin, setEnteredPin] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
-  // Form submit for setup/register
-  const handleSetupSubmit = (e) => {
+  // Handle Login submission
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    const email = formData.owner_email.trim();
-    const name = formData.owner_name.trim();
-    const shop = formData.shop_name.trim();
-    const pin = formData.owner_pin.trim();
-    const confirmPin = formData.confirm_pin.trim();
+    const email = loginEmail.trim().toLowerCase();
+    const password = loginPassword.trim();
 
     if (!email) {
-      setError('Please enter your Gmail address.');
+      setError('Please enter your email ID.');
       return;
     }
-    if (!email.includes('@')) {
-      setError('Please enter a valid email address (e.g. name@gmail.com).');
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const userSession = await api.login(email, password);
+      onAuthenticated(userSession);
+    } catch (err) {
+      setError(err.message || 'Login failed. Please verify your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Signup submission
+  const handleSignupSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    const email = signupData.email.trim().toLowerCase();
+    const password = signupData.password.trim();
+    const confirmPassword = signupData.confirm_password.trim();
+    const name = signupData.name.trim();
+    const shopName = signupData.shop_name.trim();
+    const phone = signupData.phone.trim();
+
+    if (!email || !email.includes('@')) {
+      setError('Please enter a valid Gmail / Email address.');
+      return;
+    }
+    if (!password || password.length < 4) {
+      setError('Password must be at least 4 characters long.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match. Please re-enter.');
       return;
     }
     if (!name) {
       setError('Please enter your full name.');
       return;
     }
-    if (!pin || pin.length < 4) {
-      setError('Security PIN must be at least 4 digits.');
-      return;
-    }
-    if (pin !== confirmPin) {
-      setError('Security PINs do not match. Please re-enter.');
-      return;
-    }
 
-    setSubmitting(true);
     try {
-      const authRecord = {
-        owner_name: name,
-        owner_email: email,
-        owner_phone: formData.owner_phone.trim(),
-        shop_name: shop || 'MS Store',
-        owner_pin: pin,
-        authenticated_at: new Date().toISOString(),
-      };
-      onAuthenticated(authRecord);
-    } catch (err) {
-      setError(err.message || 'Failed to save authentication profile.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Submit for PIN unlock
-  const handleUnlockSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (enteredPin.trim() === String(auth?.owner_pin || '').trim()) {
-      onAuthenticated({
-        ...auth,
-        authenticated_at: new Date().toISOString(),
+      setLoading(true);
+      const userSession = await api.signup({
+        email,
+        password,
+        name,
+        shop_name: shopName || 'MS Store',
+        phone,
       });
-    } else {
-      setError('Incorrect Security PIN. Please try again.');
+      onAuthenticated(userSession);
+    } catch (err) {
+      setError(err.message || 'Signup failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-indigo-950/50 preserve-3d">
+      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-indigo-950/60 preserve-3d">
         {/* Decorative Top Glow */}
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-20 bg-indigo-500/20 blur-3xl rounded-full pointer-events-none" />
 
-        {/* Header Icon */}
+        {/* Top Header Logo */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 text-white shadow-xl shadow-indigo-600/30 mb-3 preserve-3d">
-            {mode === 'setup' ? (
-              <Sparkles className="w-7 h-7 animate-pulse" />
-            ) : (
-              <Lock className="w-7 h-7 text-white" />
-            )}
+            <Sparkles className="w-7 h-7 animate-pulse" />
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight m-0">
-            {mode === 'setup' ? 'Owner Setup & Authentication' : 'Terminal Locked'}
+            {activeTab === 'login' ? 'Welcome Back to MS Store' : 'Create Store Owner Account'}
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-sm m-0">
-            {mode === 'setup'
-              ? 'Enter your Gmail and store details to activate your secure POS & Inventory terminal'
-              : `Welcome back, ${auth?.owner_name || 'Owner'}. Enter your 4-digit PIN to access terminal.`}
+            {activeTab === 'login'
+              ? 'Log in with your Email ID and Password. All your store products, bills, and profit reports are saved under your ID.'
+              : 'Sign up to create your secure store ID. All your inventory and sales data will be tied directly to your account.'}
           </p>
+        </div>
+
+        {/* Tabs: Log In vs Sign Up */}
+        <div className="flex items-center gap-1 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 mb-6 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('login');
+              setError('');
+            }}
+            className={`flex-1 py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${
+              activeTab === 'login'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <LogIn className="w-4 h-4" />
+            <span>Log In to My ID</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('signup');
+              setError('');
+            }}
+            className={`flex-1 py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${
+              activeTab === 'signup'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Sign Up (New Store)</span>
+          </button>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center gap-2 animate-fadeIn">
+          <div className="mb-5 p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center gap-2 animate-fadeIn">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Setup / Register Form */}
-        {mode === 'setup' && (
-          <form noValidate onSubmit={handleSetupSubmit} className="space-y-4">
-            {/* Gmail */}
+        {/* 1. Log In Form */}
+        {activeTab === 'login' && (
+          <form noValidate onSubmit={handleLoginSubmit} className="space-y-4">
+            {/* Email */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Your Gmail Address *
+                Your Email ID / Gmail *
               </label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3 w-4 h-4 text-indigo-400" />
@@ -133,15 +190,130 @@ export default function AuthModal({ auth, onAuthenticated, settings }) {
                   type="email"
                   required
                   placeholder="e.g. yourname@gmail.com"
-                  value={formData.owner_email}
-                  onChange={(e) => setFormData({ ...formData, owner_email: e.target.value })}
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
                 />
               </div>
             </div>
 
+            {/* Password */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Password *
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-indigo-400" />
+                <input
+                  type={showLoginPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Enter your password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  className="absolute right-3.5 top-3 text-slate-400 hover:text-white"
+                >
+                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.98] disabled:opacity-50"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>{loading ? 'Logging in...' : 'Log In & Load My Store Data'}</span>
+            </button>
+
+            <div className="pt-2 text-center text-xs text-slate-400">
+              Don't have an ID yet?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('signup');
+                  setError('');
+                }}
+                className="text-indigo-400 hover:text-indigo-300 font-bold underline ml-1"
+              >
+                Sign up here
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* 2. Sign Up Form */}
+        {activeTab === 'signup' && (
+          <form noValidate onSubmit={handleSignupSubmit} className="space-y-4">
+            {/* Email */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Your Email / Gmail Address *
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-indigo-400" />
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. yourname@gmail.com"
+                  value={signupData.email}
+                  onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+              </div>
+            </div>
+
+            {/* Password & Confirm */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Owner Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Create Password *
+                </label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Min 4 characters"
+                    value={signupData.password}
+                    onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-white"
+                  >
+                    {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Confirm Password *
+                </label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3.5 top-3 w-4 h-4 text-emerald-400" />
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Re-enter password"
+                    value={signupData.confirm_password}
+                    onChange={(e) => setSignupData({ ...signupData, confirm_password: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Name & Shop */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Owner Full Name *
@@ -152,17 +324,16 @@ export default function AuthModal({ auth, onAuthenticated, settings }) {
                     type="text"
                     required
                     placeholder="e.g. Mugesh"
-                    value={formData.owner_name}
-                    onChange={(e) => setFormData({ ...formData, owner_name: e.target.value })}
+                    value={signupData.name}
+                    onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
                   />
                 </div>
               </div>
 
-              {/* Shop / Business Name */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Shop Name *
+                  Shop / Business Name *
                 </label>
                 <div className="relative">
                   <Store className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
@@ -170,8 +341,8 @@ export default function AuthModal({ auth, onAuthenticated, settings }) {
                     type="text"
                     required
                     placeholder="MS Store"
-                    value={formData.shop_name}
-                    onChange={(e) => setFormData({ ...formData, shop_name: e.target.value })}
+                    value={signupData.shop_name}
+                    onChange={(e) => setSignupData({ ...signupData, shop_name: e.target.value })}
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
                   />
                 </div>
@@ -188,116 +359,37 @@ export default function AuthModal({ auth, onAuthenticated, settings }) {
                 <input
                   type="tel"
                   placeholder="+91 98765 43210"
-                  value={formData.owner_phone}
-                  onChange={(e) => setFormData({ ...formData, owner_phone: e.target.value })}
+                  value={signupData.phone}
+                  onChange={(e) => setSignupData({ ...signupData, phone: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
                 />
               </div>
             </div>
 
-            {/* Security PIN Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Security PIN (4-6 digits) *
-                </label>
-                <div className="relative">
-                  <KeyRound className="absolute left-3.5 top-3 w-4 h-4 text-amber-400" />
-                  <input
-                    type="password"
-                    maxLength={6}
-                    placeholder="••••"
-                    value={formData.owner_pin}
-                    onChange={(e) => setFormData({ ...formData, owner_pin: e.target.value.replace(/\D/g, '') })}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white tracking-widest font-mono placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirm Security PIN *
-                </label>
-                <div className="relative">
-                  <ShieldCheck className="absolute left-3.5 top-3 w-4 h-4 text-emerald-400" />
-                  <input
-                    type="password"
-                    maxLength={6}
-                    placeholder="••••"
-                    value={formData.confirm_pin}
-                    onChange={(e) => setFormData({ ...formData, confirm_pin: e.target.value.replace(/\D/g, '') })}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-800/90 border border-slate-700 rounded-xl text-sm text-white tracking-widest font-mono placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-slate-500 pt-1 m-0">
-              🔒 Your Gmail and Security PIN protect your sales data, stock adjustments, and profit reports.
+            <p className="text-[11px] text-slate-400 pt-1 m-0">
+              🔒 Your products, inventory quantities, bills, and profit reports are saved safely under your registered Email ID.
             </p>
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={loading}
               className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.98] disabled:opacity-50"
             >
-              <span>Initialize & Access POS Terminal</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-        )}
-
-        {/* Unlock Form */}
-        {mode === 'unlock' && (
-          <form noValidate onSubmit={handleUnlockSubmit} className="space-y-5">
-            {/* Account Card */}
-            <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-lg shadow-md">
-                {(auth?.owner_name || 'M')[0].toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-white text-sm truncate m-0">{auth?.owner_name || 'Store Owner'}</p>
-                <div className="flex items-center gap-1.5 text-xs text-indigo-400 truncate mt-0.5">
-                  <Mail className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate">{auth?.owner_email}</span>
-                </div>
-                <p className="text-[11px] text-slate-400 m-0 mt-0.5">{auth?.shop_name || 'MS Store'}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 text-center">
-                Enter 4-Digit Security PIN
-              </label>
-              <div className="max-w-[200px] mx-auto">
-                <input
-                  type="password"
-                  maxLength={6}
-                  autoFocus
-                  placeholder="••••"
-                  value={enteredPin}
-                  onChange={(e) => setEnteredPin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full text-center tracking-[0.5em] text-2xl font-mono py-2.5 bg-slate-800 border-2 border-indigo-500/50 rounded-2xl text-white focus:outline-none focus:border-indigo-400 transition"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.98]"
-            >
-              <Lock className="w-4 h-4" />
-              <span>Unlock POS Terminal</span>
+              <UserPlus className="w-4 h-4" />
+              <span>{loading ? 'Creating Account...' : 'Sign Up & Initialize Store ID'}</span>
             </button>
 
-            <div className="pt-2 text-center">
+            <div className="pt-2 text-center text-xs text-slate-400">
+              Already have an account?{' '}
               <button
                 type="button"
-                onClick={() => setMode('setup')}
-                className="text-xs text-slate-400 hover:text-indigo-400 inline-flex items-center gap-1.5 transition"
+                onClick={() => {
+                  setActiveTab('login');
+                  setError('');
+                }}
+                className="text-indigo-400 hover:text-indigo-300 font-bold underline ml-1"
               >
-                <RefreshCw className="w-3 h-3" />
-                <span>Switch Owner Account / Update Details</span>
+                Log in here
               </button>
             </div>
           </form>

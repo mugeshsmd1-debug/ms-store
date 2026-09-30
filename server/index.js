@@ -478,8 +478,97 @@ app.get('/api/orders/:id', (req, res) => {
 // PROFIT & LOSS (P&L) ANALYTICS ENDPOINTS
 // ---------------------------------------------
 // ---------------------------------------------
-// STORE OWNER AUTHENTICATION & PROFILE
+// STORE OWNER AUTHENTICATION & MULTI-USER REGISTRY
 // ---------------------------------------------
+app.post('/api/auth/signup', (req, res) => {
+  try {
+    const { email, password, name, shop_name, phone } = req.body;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+    const cleanName = (name || '').trim();
+    const cleanShop = (shop_name || 'MS Store').trim();
+    const cleanPhone = (phone || '').trim();
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid email / Gmail address is required.' });
+    }
+    if (!cleanPassword || cleanPassword.length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+    }
+    if (!cleanName) {
+      return res.status(400).json({ error: 'Full name is required.' });
+    }
+
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+    if (existing) {
+      return res.status(400).json({ error: `An account with email "${cleanEmail}" already exists. Please Log In.` });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO users (email, password, name, shop_name, phone)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(cleanEmail, cleanPassword, cleanName, cleanShop, cleanPhone);
+
+    const userSession = {
+      id: result.lastInsertRowid,
+      email: cleanEmail,
+      name: cleanName,
+      shop_name: cleanShop,
+      phone: cleanPhone,
+    };
+
+    res.status(201).json({ user: userSession });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      return res.status(400).json({ error: 'Please enter both email and password.' });
+    }
+
+    const user = db.prepare('SELECT id, email, password, name, shop_name, phone FROM users WHERE email = ?').get(cleanEmail);
+    if (!user || user.password !== cleanPassword) {
+      return res.status(401).json({ error: 'Invalid email or password. Please verify and try again.' });
+    }
+
+    const userSession = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      shop_name: user.shop_name,
+      phone: user.phone,
+    };
+
+    res.json({ user: userSession });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  try {
+    const userEmail = (req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase();
+    if (!userEmail) {
+      return res.json({ user: null });
+    }
+    const user = db.prepare('SELECT id, email, name, shop_name, phone FROM users WHERE email = ?').get(userEmail);
+    res.json({ user: user || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.json({ success: true });
+});
+
 app.get('/api/auth/profile', (req, res) => {
   try {
     const settings = db.prepare('SELECT owner_name, owner_email, owner_pin, phone, shop_name FROM settings WHERE id = 1').get() || {};
@@ -522,6 +611,7 @@ app.post('/api/auth/profile', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // Wipe all store data to start fresh (Zero dummy data)
 app.post('/api/system/reset', (req, res) => {

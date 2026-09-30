@@ -1,5 +1,7 @@
-// Client-side persistent storage engine for Netlify deployments and offline mode
+// Client-side persistent storage engine with Account-Scoped Data Isolation
 const STORAGE_KEYS = {
+  USERS: 'ms_store_users',
+  ACTIVE_USER: 'ms_store_active_user',
   SETTINGS: 'ms_store_settings',
   PRODUCTS: 'ms_store_products',
   ORDERS: 'ms_store_orders',
@@ -24,11 +26,44 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_PRODUCTS = [];
 const DEFAULT_ORDERS = [];
 
+function getActiveUser() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getUserScopedKey(key) {
+  // Global user registry and session are not scoped
+  if (key === STORAGE_KEYS.USERS || key === STORAGE_KEYS.ACTIVE_USER) {
+    return key;
+  }
+  const user = getActiveUser();
+  if (user && user.email) {
+    const safeEmail = user.email.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    return `${key}_${safeEmail}`;
+  }
+  return key;
+}
+
 function getStored(key, defaultVal) {
   try {
-    const raw = localStorage.getItem(key);
+    const scopedKey = getUserScopedKey(key);
+    let raw = localStorage.getItem(scopedKey);
+
+    // If scoped key doesn't exist yet, check if base key has legacy data to migrate
+    if (!raw && scopedKey !== key) {
+      const legacyRaw = localStorage.getItem(key);
+      if (legacyRaw) {
+        localStorage.setItem(scopedKey, legacyRaw);
+        raw = legacyRaw;
+      }
+    }
+
     if (!raw) {
-      localStorage.setItem(key, JSON.stringify(defaultVal));
+      localStorage.setItem(scopedKey, JSON.stringify(defaultVal));
       return defaultVal;
     }
     return JSON.parse(raw);
@@ -39,40 +74,153 @@ function getStored(key, defaultVal) {
 
 function setStored(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const scopedKey = getUserScopedKey(key);
+    localStorage.setItem(scopedKey, JSON.stringify(value));
   } catch (e) {
     console.error('Failed to save to localStorage:', e);
   }
 }
 
 export const localStore = {
-  // Authentication & Profile
+  // User Authentication & Account Registry
+  getCurrentUser() {
+    return getActiveUser();
+  },
+
+  getUsers() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.USERS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  signup(userData) {
+    const users = this.getUsers();
+    const email = (userData.email || '').trim().toLowerCase();
+    const password = (userData.password || '').trim();
+    const name = (userData.name || '').trim();
+    const shop_name = (userData.shop_name || 'MS Store').trim();
+    const phone = (userData.phone || '').trim();
+
+    if (!email || !email.includes('@')) {
+      throw new Error('Please enter a valid email address (e.g. yourname@gmail.com).');
+    }
+    if (!password || password.length < 4) {
+      throw new Error('Password must be at least 4 characters long.');
+    }
+    if (!name) {
+      throw new Error('Please enter your full name.');
+    }
+
+    const existing = users.find((u) => u.email === email);
+    if (existing) {
+      throw new Error(`An account with email "${email}" already exists. Please Log In.`);
+    }
+
+    const newUser = {
+      id: 'usr_' + Date.now(),
+      email,
+      password,
+      name,
+      shop_name,
+      phone,
+      created_at: new Date().toISOString(),
+    };
+
+    users.push(newUser);
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+    const userSession = {
+      id: newUser.id,
+      email: newUser.email,
+      name: newUser.name,
+      shop_name: newUser.shop_name,
+      phone: newUser.phone,
+      token: 'session_' + Date.now(),
+      logged_in_at: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(userSession));
+
+    // Initialize user settings
+    const initialSettings = {
+      ...DEFAULT_SETTINGS,
+      shop_name,
+      owner_name: name,
+      owner_email: email,
+      phone,
+    };
+    this.updateSettings(initialSettings);
+
+    return userSession;
+  },
+
+  login(email, password) {
+    const users = this.getUsers();
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+
+    if (!cleanEmail) {
+      throw new Error('Please enter your email address.');
+    }
+    if (!cleanPassword) {
+      throw new Error('Please enter your password.');
+    }
+
+    const user = users.find(
+      (u) => u.email === cleanEmail && u.password === cleanPassword
+    );
+
+    if (!user) {
+      if (users.length === 0) {
+        throw new Error('No registered account found. Please click Sign Up to register.');
+      }
+      throw new Error('Invalid email or password. Please verify and try again.');
+    }
+
+    const userSession = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      shop_name: user.shop_name,
+      phone: user.phone,
+      token: 'session_' + Date.now(),
+      logged_in_at: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(userSession));
+
+    return userSession;
+  },
+
+  logout() {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+    } catch {}
+    return { success: true };
+  },
+
+  // Legacy auth helper compatibility
   getAuth() {
-    return getStored(STORAGE_KEYS.AUTH, null);
+    return this.getCurrentUser();
   },
 
   saveAuth(authData) {
-    setStored(STORAGE_KEYS.AUTH, authData);
-    // Also sync to store settings
-    const settings = this.getSettings();
-    this.updateSettings({
-      ...settings,
-      owner_name: authData.owner_name || settings.owner_name,
-      owner_email: authData.owner_email || settings.owner_email,
-      owner_pin: authData.owner_pin || settings.owner_pin,
-      phone: authData.owner_phone || settings.phone,
-      shop_name: authData.shop_name || settings.shop_name,
-    });
+    if (authData.email && authData.password) {
+      try {
+        return this.signup(authData);
+      } catch {
+        return this.login(authData.email, authData.password);
+      }
+    }
     return authData;
   },
 
   clearAuth() {
-    try {
-      localStorage.removeItem(STORAGE_KEYS.AUTH);
-    } catch {}
+    return this.logout();
   },
 
-  // Settings
+  // Settings (Account-scoped)
   getSettings() {
     return getStored(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
   },
@@ -84,20 +232,24 @@ export const localStore = {
     return updated;
   },
 
-  // Wipe / Reset to start completely fresh
+  // Wipe / Reset current account data to start completely fresh
   clearAllData() {
     try {
-      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-      localStorage.removeItem(STORAGE_KEYS.ORDERS);
-      localStorage.removeItem(STORAGE_KEYS.STOCK_LOGS);
-      setStored(STORAGE_KEYS.PRODUCTS, []);
-      setStored(STORAGE_KEYS.ORDERS, []);
-      setStored(STORAGE_KEYS.STOCK_LOGS, []);
+      const pKey = getUserScopedKey(STORAGE_KEYS.PRODUCTS);
+      const oKey = getUserScopedKey(STORAGE_KEYS.ORDERS);
+      const sKey = getUserScopedKey(STORAGE_KEYS.STOCK_LOGS);
+      localStorage.removeItem(pKey);
+      localStorage.removeItem(oKey);
+      localStorage.removeItem(sKey);
+      localStorage.setItem(pKey, JSON.stringify([]));
+      localStorage.setItem(oKey, JSON.stringify([]));
+      localStorage.setItem(sKey, JSON.stringify([]));
     } catch (e) {
       console.error(e);
     }
     return { success: true };
   },
+
 
   // Products
   getProducts({ search = '', category = 'All', lowStockOnly = false } = {}) {

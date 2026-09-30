@@ -12,29 +12,30 @@ export default function App() {
   const [settings, setSettings] = useState(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [auth, setAuth] = useState(null);
-  const [isLocked, setIsLocked] = useState(false);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all initial store data and auth profile
+  // Fetch all initial store data for the active logged-in user
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      const [settingsData, productsData, categoriesData, authData] = await Promise.all([
+      const currentUser = await api.getCurrentUser();
+      setUser(currentUser);
+
+      if (!currentUser?.email) {
+        // No active user session - AuthModal will be displayed
+        setLoading(false);
+        return;
+      }
+
+      const [settingsData, productsData, categoriesData] = await Promise.all([
         api.getSettings(),
         api.getProducts(),
         api.getCategories(),
-        api.getAuth(),
       ]);
       setSettings(settingsData);
       setProducts(productsData);
       setCategories(categoriesData);
-      setAuth(authData);
-
-      // If no owner profile is set up, terminal is locked / requires setup
-      if (!authData?.owner_email || !authData?.owner_pin) {
-        setIsLocked(true);
-      }
     } catch (err) {
       console.error('Failed to load store data:', err);
     } finally {
@@ -59,19 +60,23 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
-  const handleAuthenticated = async (authRecord) => {
+  // When user successfully signs up or logs in
+  const handleAuthenticated = async (userSession) => {
+    setUser(userSession);
+    await loadInitialData();
+  };
+
+  // When user logs out to switch accounts
+  const handleLogout = async () => {
     try {
-      const saved = await api.saveAuth(authRecord);
-      setAuth(saved);
-      setIsLocked(false);
-      if (saved.shop_name && settings) {
-        setSettings((prev) => ({ ...prev, shop_name: saved.shop_name }));
-      }
-    } catch (err) {
-      console.error('Failed to save auth:', err);
-      setAuth(authRecord);
-      setIsLocked(false);
+      await api.logout();
+    } catch (e) {
+      console.error(e);
     }
+    setUser(null);
+    setProducts([]);
+    setCategories([]);
+    setSettings(null);
   };
 
   // Count low stock items for navbar warning badge
@@ -79,7 +84,7 @@ export default function App() {
     (p) => p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0
   ).length;
 
-  if (loading && !settings) {
+  if (loading && !user && !settings) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
         <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
@@ -88,8 +93,14 @@ export default function App() {
     );
   }
 
-  // Show Auth Modal if not authenticated or terminal is locked
-  const shouldShowAuthModal = isLocked || !auth?.owner_email || !auth?.owner_pin;
+  // If user is not logged in, show Sign Up / Log In Modal
+  if (!user?.email) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
+        <AuthModal onAuthenticated={handleAuthenticated} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
@@ -99,8 +110,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         lowStockCount={lowStockCount}
         settings={settings}
-        auth={auth}
-        onLock={() => setIsLocked(true)}
+        user={user}
+        onLogout={handleLogout}
       />
 
       {/* Main Tab View Content */}
@@ -134,30 +145,21 @@ export default function App() {
           <SettingsView
             settings={settings}
             onSettingsUpdated={(newSettings) => setSettings(newSettings)}
-            auth={auth}
-            onAuthUpdated={(newAuth) => setAuth(newAuth)}
+            user={user}
             onResetData={loadInitialData}
+            onLogout={handleLogout}
           />
         )}
       </main>
-
-      {/* Owner Authentication / Terminal Lock Modal */}
-      {shouldShowAuthModal && (
-        <AuthModal
-          auth={auth}
-          settings={settings}
-          onAuthenticated={handleAuthenticated}
-        />
-      )}
 
       {/* Footer */}
       <footer className="no-print border-t border-slate-800/80 bg-slate-950/60 py-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="m-0">
-            {settings?.shop_name || 'MS Store'} • POS, Stock & Profit/Loss Management
+            {settings?.shop_name || user?.shop_name || 'MS Store'} • POS, Stock & Profit/Loss Management
           </p>
           <p className="m-0 text-[11px] text-slate-400">
-            Authenticated for: {auth?.owner_email || 'Owner Setup Pending'}
+            Logged in as: <span className="text-indigo-400 font-mono font-semibold">{user.email}</span>
           </p>
         </div>
       </footer>

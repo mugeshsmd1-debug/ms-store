@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShoppingBag, Package, TrendingUp, Settings, AlertTriangle, Sparkles, Lock, Mail, UserCheck } from 'lucide-react';
+import { ShoppingBag, Package, TrendingUp, Settings, AlertTriangle, Sparkles, LogOut, User } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStockCount = 0, settings, auth, onLock }) {
+export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStockCount = 0, settings, user, onLogout }) {
   const tabs = [
     { id: 'billing', label: 'POS Billing', icon: ShoppingBag, badge: cartCount > 0 ? cartCount : null, badgeColor: 'bg-indigo-500' },
     { id: 'inventory', label: 'Stock & Inventory', icon: Package, badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
@@ -21,7 +21,7 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-extrabold tracking-tight text-white m-0">
-                  {settings?.shop_name || 'MS Store'}
+                  {settings?.shop_name || user?.shop_name || 'MS Store'}
                 </h1>
                 <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                   POS PRO
@@ -76,31 +76,31 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
               </div>
             )}
 
-            {/* Owner Gmail Profile Chip with Lock Button */}
-            {auth?.owner_email && (
+            {/* Owner Email ID Profile Chip with Log Out Button */}
+            {user?.email && (
               <div className="flex items-center gap-2 p-1 pl-2.5 rounded-2xl bg-slate-800/90 border border-slate-700/80">
-                <div className="flex items-center gap-2 max-w-[140px] sm:max-w-[200px]">
+                <div className="flex items-center gap-2 max-w-[130px] sm:max-w-[200px]">
                   <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {(auth.owner_name || 'O')[0].toUpperCase()}
+                    {(user.name || user.email || 'O')[0].toUpperCase()}
                   </div>
                   <div className="truncate">
                     <p className="text-xs font-bold text-slate-200 truncate m-0 leading-tight">
-                      {auth.owner_name || 'Owner'}
+                      {user.name || 'Store Owner'}
                     </p>
                     <p className="text-[10px] text-indigo-400 truncate m-0 leading-tight">
-                      {auth.owner_email}
+                      {user.email}
                     </p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={onLock}
-                  title="Lock POS Terminal"
-                  className="p-1.5 rounded-xl bg-slate-700/80 hover:bg-rose-600 text-slate-300 hover:text-white transition flex items-center gap-1 text-[11px] font-semibold"
+                  onClick={onLogout}
+                  title="Log Out of this Account"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-700/80 hover:bg-rose-600 text-slate-300 hover:text-white transition flex items-center gap-1 text-[11px] font-semibold"
                 >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Lock</span>
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Log Out</span>
                 </button>
               </div>
             )}

@@ -9,15 +9,15 @@ import {
   Percent,
   User,
   Mail,
-  KeyRound,
   ShieldCheck,
   Trash2,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  LogOut
 } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function SettingsView({ settings, onSettingsUpdated, auth, onAuthUpdated, onResetData }) {
+export default function SettingsView({ settings, onSettingsUpdated, user, onResetData, onLogout }) {
   const [formData, setFormData] = useState({
     shop_name: 'MS Store',
     tagline: 'Smart Retail & Inventory Management',
@@ -27,17 +27,8 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
     tax_percentage: 5.0,
   });
 
-  const [authFormData, setAuthFormData] = useState({
-    owner_name: '',
-    owner_email: '',
-    owner_phone: '',
-    owner_pin: '',
-  });
-
   const [saving, setSaving] = useState(false);
-  const [savingAuth, setSavingAuth] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [savedAuthSuccess, setSavedAuthSuccess] = useState(false);
 
   // Danger zone state
   const [resetting, setResetting] = useState(false);
@@ -46,26 +37,15 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
   useEffect(() => {
     if (settings) {
       setFormData({
-        shop_name: settings.shop_name || '',
+        shop_name: settings.shop_name || user?.shop_name || 'MS Store',
         tagline: settings.tagline || '',
-        phone: settings.phone || '',
+        phone: settings.phone || user?.phone || '',
         address: settings.address || '',
         currency_symbol: settings.currency_symbol || '₹',
         tax_percentage: settings.tax_percentage ?? 5.0,
       });
     }
-  }, [settings]);
-
-  useEffect(() => {
-    if (auth) {
-      setAuthFormData({
-        owner_name: auth.owner_name || settings?.owner_name || '',
-        owner_email: auth.owner_email || settings?.owner_email || '',
-        owner_phone: auth.owner_phone || settings?.phone || '',
-        owner_pin: auth.owner_pin || settings?.owner_pin || '',
-      });
-    }
-  }, [auth, settings]);
+  }, [settings, user]);
 
   const handleSubmitSettings = async (e) => {
     e.preventDefault();
@@ -82,32 +62,13 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
     }
   };
 
-  const handleSubmitAuth = async (e) => {
-    e.preventDefault();
-    try {
-      setSavingAuth(true);
-      const updatedAuth = await api.saveAuth({
-        ...auth,
-        ...authFormData,
-        shop_name: formData.shop_name,
-      });
-      if (onAuthUpdated) onAuthUpdated(updatedAuth);
-      setSavedAuthSuccess(true);
-      setTimeout(() => setSavedAuthSuccess(false), 3000);
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSavingAuth(false);
-    }
-  };
-
   const handleResetAllData = async () => {
     try {
       setResetting(true);
       await api.clearAllData();
       if (onResetData) await onResetData();
       setShowResetConfirm(false);
-      alert('All products and sales data have been wiped clean. Your store is now starting 100% fresh!');
+      alert('All products and sales data for your ID have been wiped clean. Your store is now starting 100% fresh!');
     } catch (err) {
       alert(err.message || 'Failed to reset store data.');
     } finally {
@@ -117,114 +78,46 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* 1. Store Owner Profile & Gmail Authentication */}
+      {/* 1. Logged-in Account ID Card */}
       <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-xl">
-        <div className="flex items-center gap-3 pb-6 border-b border-slate-800">
-          <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-400">
-            <User className="w-6 h-6" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+          <div className="flex items-center gap-3.5">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-sky-400 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-indigo-600/30">
+              {(user?.name || user?.email || 'M')[0].toUpperCase()}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-white m-0">{user?.name || 'Store Owner'}</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  ACTIVE ID
+                </span>
+              </div>
+              <p className="text-xs text-indigo-400 flex items-center gap-1.5 mt-0.5 m-0 font-mono">
+                <Mail className="w-3.5 h-3.5" />
+                <span>{user?.email || 'No email attached'}</span>
+              </p>
+              <p className="text-[11px] text-slate-400 m-0 mt-0.5">
+                Shop: {user?.shop_name || settings?.shop_name || 'MS Store'} {user?.phone && `• ${user.phone}`}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-white m-0">Store Owner & Gmail Profile</h2>
-            <p className="text-xs text-slate-400 m-0">
-              Your registered Gmail credentials and 4-digit POS terminal security PIN
-            </p>
-          </div>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-rose-600/80 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-2 self-start sm:self-auto"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Switch Account / Log Out</span>
+          </button>
         </div>
 
-        {savedAuthSuccess && (
-          <div className="mt-4 p-3.5 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl text-emerald-400 text-xs flex items-center gap-2 animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            <span>Owner authentication profile updated successfully!</span>
-          </div>
-        )}
-
-        <form noValidate onSubmit={handleSubmitAuth} className="mt-6 space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Owner Email */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Owner Gmail Address *
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-indigo-400" />
-                <input
-                  type="email"
-                  required
-                  value={authFormData.owner_email}
-                  onChange={(e) => setAuthFormData({ ...authFormData, owner_email: e.target.value })}
-                  placeholder="e.g. owner@gmail.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* Owner Name */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Owner Full Name *
-              </label>
-              <div className="relative">
-                <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  required
-                  value={authFormData.owner_name}
-                  onChange={(e) => setAuthFormData({ ...authFormData, owner_name: e.target.value })}
-                  placeholder="e.g. Mugesh"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Owner Phone */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Owner Phone Number
-              </label>
-              <div className="relative">
-                <Phone className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                <input
-                  type="tel"
-                  value={authFormData.owner_phone}
-                  onChange={(e) => setAuthFormData({ ...authFormData, owner_phone: e.target.value })}
-                  placeholder="+91 98765 43210"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* Terminal PIN */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                POS Terminal Security PIN (4-6 digits) *
-              </label>
-              <div className="relative">
-                <KeyRound className="absolute left-3.5 top-3 w-4 h-4 text-amber-400" />
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={authFormData.owner_pin}
-                  onChange={(e) => setAuthFormData({ ...authFormData, owner_pin: e.target.value.replace(/\D/g, '') })}
-                  placeholder="••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white tracking-widest font-mono focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={savingAuth}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition disabled:opacity-50"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              {savingAuth ? 'Updating Profile...' : 'Save Owner Profile & PIN'}
-            </button>
-          </div>
-        </form>
+        <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-[11px] text-indigo-300 flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+          <span>
+            All your products, invoices, and reports are saved under <strong className="text-white">{user?.email}</strong>. Logging in with this email ID on any session will automatically restore all your data.
+          </span>
+        </div>
       </div>
 
       {/* 2. Shop & POS Configuration */}
@@ -236,7 +129,7 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
           <div>
             <h2 className="text-xl font-bold text-white m-0">Store Details & Billing Settings</h2>
             <p className="text-xs text-slate-400 m-0">
-              Store branding, address for printed invoice receipts, and taxation defaults
+              Shop branding, address for printed invoice receipts, and taxation defaults
             </p>
           </div>
         </div>
@@ -379,14 +272,14 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
           <div>
             <h2 className="text-xl font-bold text-rose-400 m-0">Reset Store / Start Fresh</h2>
             <p className="text-xs text-slate-400 m-0">
-              Clear all inventory products, order transactions, and stock logs to start completely fresh
+              Clear all inventory products, order transactions, and stock logs for this account
             </p>
           </div>
         </div>
 
         <div className="mt-5 space-y-4">
           <p className="text-xs text-slate-300 m-0">
-            Need to start with zero dummy items? This action wipes all sales history and inventory items so you can begin adding your real products and records from scratch.
+            Need to start with zero dummy items? This action wipes all sales history and inventory items under your ID (<strong className="text-white">{user?.email}</strong>) so you can begin adding your real products and records from scratch.
           </p>
 
           {!showResetConfirm ? (
@@ -402,7 +295,7 @@ export default function SettingsView({ settings, onSettingsUpdated, auth, onAuth
             <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-700/60 space-y-3">
               <p className="text-xs font-bold text-rose-300 m-0 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-400" />
-                Are you absolutely sure? This will permanently delete all products and invoices!
+                Are you absolutely sure? This will permanently delete all products and invoices for this account!
               </p>
               <div className="flex items-center gap-3">
                 <button
