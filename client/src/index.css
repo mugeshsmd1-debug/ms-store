@@ -59,25 +59,86 @@ body {
 
 /* Print Receipt Styles */
 @media print {
+  @page {
+    size: auto;
+    margin: 5mm;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Completely hide all no-print elements from layout flow */
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Reset modal containers so they don't clip receipt */
+  .receipt-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    display: block !important;
+  }
+
+  .receipt-modal-container {
+    position: static !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .receipt-modal-body {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+  }
+
+  /* Hide app content outside receipt when printing */
   body * {
     visibility: hidden;
   }
-  #printable-receipt, #printable-receipt * {
-    visibility: visible;
+
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible !important;
+    color: #000000 !important;
   }
+
   #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 24px;
-    background: white !important;
-    color: #111827 !important;
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 400px !important;
+    margin: 0 auto !important;
+    padding: 8px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
-  }
-  .no-print {
-    display: none !important;
   }
 }
