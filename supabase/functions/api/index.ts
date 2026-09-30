@@ -942,10 +942,36 @@ Deno.serve(async (req: Request) => {
     }
 
     // ----------------------------------------------------
-    // SYSTEM RESET
+    // SYSTEM RESET (Factory Reset - Password Protected)
     // ----------------------------------------------------
     if (req.method === "POST" && normPath === "/system/reset") {
       if (!userEmail) return errJson("Authentication required", 401);
+
+      // Verify account password
+      let password = req.headers.get("x-auth-password") || url.searchParams.get("password") || "";
+      if (!password && req.headers.get("content-type")?.includes("application/json")) {
+        try {
+          const body = await req.json();
+          password = body.password || "";
+        } catch {}
+      }
+
+      if (!password) {
+        return errJson("Account password is required to reset store data.", 401);
+      }
+
+      const { data: userRec, error: userErr } = await supabase
+        .from("users")
+        .select("password")
+        .eq("email", userEmail)
+        .maybeSingle();
+
+      if (userErr || !userRec) return errJson("User account not found.", 404);
+
+      if (userRec.password !== password.trim()) {
+        return errJson("Incorrect account password. Store was not reset.", 403);
+      }
+
       await supabase.from("orders").delete().eq("user_email", userEmail);
       await supabase.from("stock_logs").delete().eq("user_email", userEmail);
       await supabase.from("products").delete().eq("user_email", userEmail);

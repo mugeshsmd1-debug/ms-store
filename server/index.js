@@ -969,6 +969,18 @@ app.post('/api/system/reset', async (req, res) => {
     const userEmail = getUserEmail(req);
     if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
+    const password = req.headers['x-auth-password'] || req.body?.password || req.query?.password || '';
+    if (!password) {
+      return res.status(401).json({ error: 'Account password is required to reset store data.' });
+    }
+
+    const { data: userRec, error: userErr } = await supabase.from('users').select('password').eq('email', userEmail).maybeSingle();
+    if (userErr || !userRec) return res.status(404).json({ error: 'User account not found.' });
+
+    if (userRec.password !== password.trim()) {
+      return res.status(403).json({ error: 'Incorrect account password. Store was not reset.' });
+    }
+
     await supabase.from('orders').delete().eq('user_email', userEmail);
     await supabase.from('stock_logs').delete().eq('user_email', userEmail);
     await supabase.from('products').delete().eq('user_email', userEmail);

@@ -36,6 +36,10 @@ export default function SettingsView({ settings, onSettingsUpdated, user, onRese
   // Danger zone state
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetError, setResetError] = useState('');
+
   const [clearingBills, setClearingBills] = useState(false);
   const [showClearBillsConfirm, setShowClearBillsConfirm] = useState(false);
   const [clearBillsPassword, setClearBillsPassword] = useState('');
@@ -95,15 +99,24 @@ export default function SettingsView({ settings, onSettingsUpdated, user, onRese
     }
   };
 
-  const handleResetAllData = async () => {
+  const handleResetAllData = async (e) => {
+    if (e) e.preventDefault();
+    if (!resetPassword.trim()) {
+      setResetError('Please enter your account password.');
+      return;
+    }
+
     try {
       setResetting(true);
-      await api.clearAllData();
+      setResetError('');
+      await api.clearAllData(resetPassword.trim());
       if (onResetData) await onResetData();
       setShowResetConfirm(false);
+      setResetPassword('');
       alert('All products and sales data for your ID have been wiped clean. Your store is now starting 100% fresh!');
     } catch (err) {
-      alert(err.message || 'Failed to reset store data.');
+      console.error('Failed to reset store data:', err);
+      setResetError(err.message || 'Incorrect password or failed to reset store data.');
     } finally {
       setResetting(false);
     }
@@ -426,23 +439,61 @@ export default function SettingsView({ settings, onSettingsUpdated, user, onRese
           {!showResetConfirm ? (
             <button
               type="button"
-              onClick={() => setShowResetConfirm(true)}
-              className="px-5 py-2.5 bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-2"
+              onClick={() => {
+                setShowResetConfirm(true);
+                setResetPassword('');
+                setResetError('');
+              }}
+              className="px-5 py-2.5 bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-2 active:scale-95 shadow-sm"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Wipe Store Data & Start Fresh</span>
             </button>
           ) : (
-            <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-700/60 space-y-3">
+            <form onSubmit={handleResetAllData} className="p-4 rounded-2xl bg-rose-950/40 border border-rose-700/60 space-y-3">
               <p className="text-xs font-bold text-rose-300 m-0 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-400" />
                 Are you absolutely sure? This will permanently delete all products and invoices for this account!
               </p>
-              <div className="flex items-center gap-3">
+
+              {resetError && (
+                <div className="p-2.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-semibold text-slate-300">
+                  Enter Account Password to Confirm:
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="Enter your account password"
+                    autoFocus
+                    required
+                    className="w-full pl-9 pr-10 py-2 bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl text-white text-xs outline-none transition font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition"
+                  >
+                    {showResetPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
                 <button
-                  type="button"
-                  disabled={resetting}
-                  onClick={handleResetAllData}
+                  type="submit"
+                  disabled={resetting || !resetPassword}
                   className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/30 disabled:opacity-50"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -450,13 +501,17 @@ export default function SettingsView({ settings, onSettingsUpdated, user, onRese
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowResetConfirm(false)}
+                  onClick={() => {
+                    setShowResetConfirm(false);
+                    setResetPassword('');
+                    setResetError('');
+                  }}
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition"
                 >
                   Cancel
                 </button>
               </div>
-            </div>
+            </form>
           )}
         </div>
       </div>

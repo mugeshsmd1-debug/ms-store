@@ -233,7 +233,11 @@ export const localStore = {
   },
 
   // Wipe / Reset current account data to start completely fresh
-  clearAllData() {
+  clearAllData(password) {
+    const user = getActiveUser();
+    if (user && user.password && password && user.password !== password.trim()) {
+      throw new Error('Incorrect account password. Store was not reset.');
+    }
     try {
       const pKey = getUserScopedKey(STORAGE_KEYS.PRODUCTS);
       const oKey = getUserScopedKey(STORAGE_KEYS.ORDERS);

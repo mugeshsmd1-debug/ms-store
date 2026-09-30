@@ -244,9 +244,15 @@ export const api = {
     return request(`/analytics/pnl${queryString ? '?' + queryString : ''}`);
   },
 
-  // Factory Reset
-  async clearAllData() {
-    return request('/system/reset', { method: 'POST' });
+  // Factory Reset (verified by account password)
+  async clearAllData(password) {
+    return request('/system/reset', {
+      method: 'POST',
+      headers: {
+        'x-auth-password': password || '',
+      },
+      body: JSON.stringify({ password: password || '' }),
+    });
   },
 
   // Backend Connectivity Diagnostics
