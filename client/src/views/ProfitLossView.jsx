@@ -1,13 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Calendar, ShoppingCart, Award, Receipt, ArrowUpRight, BarChart3, PieChart, ShieldCheck } from 'lucide-react';
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Calendar,
+  ShoppingCart,
+  Award,
+  Receipt,
+  ArrowUpRight,
+  BarChart3,
+  PieChart,
+  ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Sparkles,
+  Layers,
+  FileSpreadsheet
+} from 'lucide-react';
 import TiltCard from '../components/TiltCard';
 import ReceiptModal from '../components/ReceiptModal';
 import { api } from '../services/api';
 
 export default function ProfitLossView({ settings }) {
-  const [range, setRange] = useState('all'); // 'today', 'week', 'month', 'all'
+  // Report Modes: 'calendar' (Daily), 'month' (Monthly), 'year' (1-Year Annual), 'all' (All-Time)
+  const [reportMode, setReportMode] = useState('calendar');
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const currentYearNum = new Date().getFullYear();
+
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+  const [selectedYear, setSelectedYear] = useState(currentYearNum);
+
   const [pnlData, setPnlData] = useState(null);
-  const [orders, setOrders] = useState([]);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -16,14 +43,22 @@ export default function ProfitLossView({ settings }) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [analytics, orderList] = await Promise.all([
-        api.getPnL(range),
-        api.getOrders({ limit: 50 }),
-      ]);
+      let params = { mode: reportMode };
+
+      if (reportMode === 'calendar') {
+        params.date = selectedDate;
+      } else if (reportMode === 'month') {
+        params.month = selectedMonth;
+      } else if (reportMode === 'year') {
+        params.year = selectedYear;
+      } else if (reportMode === 'all') {
+        params.range = 'all';
+      }
+
+      const analytics = await api.getPnL(params);
       setPnlData(analytics);
-      setOrders(orderList);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load report analytics:', err);
     } finally {
       setLoading(false);
     }
@@ -31,7 +66,7 @@ export default function ProfitLossView({ settings }) {
 
   useEffect(() => {
     fetchData();
-  }, [range]);
+  }, [reportMode, selectedDate, selectedMonth, selectedYear]);
 
   const handleViewReceipt = async (orderId) => {
     try {
@@ -45,67 +80,171 @@ export default function ProfitLossView({ settings }) {
     }
   };
 
-  if (loading && !pnlData) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-slate-400">
-        <div className="inline-block animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full mb-3" />
-        <p className="text-sm">Calculating Profit & Loss statement...</p>
-      </div>
-    );
-  }
-
   const summary = pnlData?.summary || {};
-  const isNetProfit = summary.net_profit >= 0;
+  const isNetProfit = (summary.net_profit || 0) >= 0;
   const dailyTrend = pnlData?.dailyTrend || [];
   const topProfitable = pnlData?.topProfitable || [];
+  const reportOrders = pnlData?.orders || [];
+  const annualMonthlyBreakdown = pnlData?.annualMonthlyBreakdown || [];
+  const inventoryStats = pnlData?.inventoryStats || {};
 
-  // Max value for chart scaling
+  // Scaling factor for daily bar chart
   const maxDayRevenue = Math.max(...dailyTrend.map((d) => d.daily_revenue || 0), 100);
+
+  // Quick jump helper for calendar date
+  const setQuickDate = (offsetDays) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    setSelectedDate(d.toISOString().slice(0, 10));
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Date Range Selector Header */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/90 border border-slate-700/80 rounded-3xl p-5 shadow-xl">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black text-white tracking-tight m-0">
-              Profit & Loss (P&L) Statement
-            </h2>
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
-                isNetProfit
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-              }`}
-            >
-              {isNetProfit ? 'PROFITABLE' : 'NET LOSS'}
-            </span>
+      {/* Top Header & Reporting Mode Navigation Tabs */}
+      <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight m-0">
+                Financial Reports & Profit / Loss
+              </h2>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
+                  isNetProfit
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                }`}
+              >
+                {isNetProfit ? 'PROFITABLE' : 'NET LOSS'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1 m-0">
+              Interactive multi-horizon reports: Calendar-wise Daily, Monthly, and 1-Year Annual statements
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-1 m-0">
-            Real-time financial performance, revenue breakdown, COGS, and net margins
-          </p>
+
+          {/* Sub-tab Mode Switcher */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold">
+            {[
+              { id: 'calendar', label: '📅 Daily / Calendar', desc: 'Calendar-wise' },
+              { id: 'month', label: '📆 Monthly Report', desc: 'Month by Month' },
+              { id: 'year', label: '🏛️ 1-Year Report', desc: 'Annual (12 Mo)' },
+              { id: 'all', label: '📈 All-Time Overview', desc: 'Overall' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setReportMode(tab.id)}
+                className={`px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 ${
+                  reportMode === tab.id
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                }`}
+              >
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Range Buttons */}
-        <div className="flex items-center gap-1 bg-slate-800 p-1.5 rounded-2xl border border-slate-700 text-xs font-semibold">
-          {[
-            { id: 'today', label: 'Today' },
-            { id: 'week', label: 'Last 7 Days' },
-            { id: 'month', label: 'Last 30 Days' },
-            { id: 'all', label: 'All Time' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setRange(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl transition ${
-                range === tab.id
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Dynamic Selector Bar based on active reporting mode */}
+        <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Mode 1: Calendar Date Selector */}
+          {reportMode === 'calendar' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                Select Date:
+              </span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-indigo-500/50 rounded-xl text-white font-mono focus:outline-none focus:border-indigo-400 shadow-sm"
+              />
+              <button
+                onClick={() => setQuickDate(0)}
+                className={`px-2.5 py-1.5 rounded-xl border transition ${
+                  selectedDate === todayStr
+                    ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 font-bold'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setQuickDate(-1)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition"
+              >
+                Yesterday
+              </button>
+              <span className="text-slate-500 font-mono pl-2">
+                Viewing: {new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+              </span>
+            </div>
+          )}
+
+          {/* Mode 2: Month Selector */}
+          {reportMode === 'month' && (
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                Select Month:
+              </span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-indigo-500/50 rounded-xl text-white font-mono focus:outline-none focus:border-indigo-400 shadow-sm"
+              />
+              <button
+                onClick={() => setSelectedMonth(currentMonthStr)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition"
+              >
+                Current Month
+              </button>
+            </div>
+          )}
+
+          {/* Mode 3: Year Selector */}
+          {reportMode === 'year' && (
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                Select Fiscal / Calendar Year:
+              </span>
+              <div className="flex items-center gap-1">
+                {[currentYearNum - 2, currentYearNum - 1, currentYearNum, currentYearNum + 1].map((yr) => (
+                  <button
+                    key={yr}
+                    onClick={() => setSelectedYear(yr)}
+                    className={`px-3 py-1.5 rounded-xl font-mono font-bold transition ${
+                      selectedYear === yr
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {yr}
+                  </button>
+                ))}
+              </div>
+              <span className="text-slate-500 text-xs hidden sm:inline">
+                Full 12-Month Jan to Dec Annual Audit
+              </span>
+            </div>
+          )}
+
+          {/* Mode 4: All-Time Summary */}
+          {reportMode === 'all' && (
+            <div className="text-slate-400">
+              Aggregated historical ledger of all invoices and inventory valuation
+            </div>
+          )}
+
+          {/* Live indicator */}
+          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>{pnlData?.title || 'Report Loaded'}</span>
+          </div>
         </div>
       </div>
 
@@ -115,18 +254,18 @@ export default function ProfitLossView({ settings }) {
         <TiltCard className="p-5 rounded-3xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Total Revenue
+              {reportMode === 'calendar' ? 'Day Revenue' : reportMode === 'month' ? 'Monthly Revenue' : reportMode === 'year' ? 'Annual Revenue' : 'Total Revenue'}
             </span>
             <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
           <p className="text-3xl font-black text-white font-mono m-0">
-            {currency}{summary.total_revenue?.toLocaleString()}
+            {currency}{(summary.total_revenue || 0).toLocaleString()}
           </p>
           <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800 pt-2">
-            <span>Gross Sales: {currency}{summary.gross_sales?.toFixed(2)}</span>
-            <span>Tax: {currency}{summary.total_tax?.toFixed(2)}</span>
+            <span>Gross Sales: {currency}{(summary.gross_sales || 0).toFixed(2)}</span>
+            <span>Tax: {currency}{(summary.total_tax || 0).toFixed(2)}</span>
           </div>
         </TiltCard>
 
@@ -141,11 +280,11 @@ export default function ProfitLossView({ settings }) {
             </div>
           </div>
           <p className="text-3xl font-black text-rose-400 font-mono m-0">
-            {currency}{summary.total_cost?.toLocaleString()}
+            {currency}{(summary.total_cost || 0).toLocaleString()}
           </p>
           <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800 pt-2">
-            <span>Discounts: {currency}{summary.total_discounts?.toFixed(2)}</span>
-            <span className="text-rose-400/80">Product acquisition cost</span>
+            <span>Discounts: {currency}{(summary.total_discounts || 0).toFixed(2)}</span>
+            <span className="text-rose-400/80">Acquisition cost</span>
           </div>
         </TiltCard>
 
@@ -175,49 +314,141 @@ export default function ProfitLossView({ settings }) {
             }`}
           >
             {isNetProfit ? '+' : ''}
-            {currency}{summary.net_profit?.toLocaleString()}
+            {currency}{(summary.net_profit || 0).toLocaleString()}
           </p>
           <div className="mt-2 text-[11px] flex items-center justify-between border-t border-slate-800 pt-2">
             <span className={isNetProfit ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-              Net Margin: {summary.profit_margin}%
+              Margin: {summary.profit_margin || 0}%
             </span>
-            <span className="text-slate-400">{summary.total_orders} Orders</span>
+            <span className="text-slate-400">{summary.total_orders || 0} Invoices</span>
           </div>
         </TiltCard>
 
-        {/* Profit Margin & Efficiency */}
+        {/* Orders & Avg Order Value */}
         <TiltCard className="p-5 rounded-3xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Profit Margin %
+              Order Volume & AOV
             </span>
             <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400">
               <Award className="w-5 h-5" />
             </div>
           </div>
           <p className="text-3xl font-black text-amber-400 font-mono m-0">
-            {summary.profit_margin}%
+            {summary.total_orders || 0}
+            <span className="text-sm font-normal text-slate-400 ml-1.5">orders</span>
           </p>
           <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800 pt-2">
             <span>Avg Order Value:</span>
             <span className="font-mono text-white font-bold">
               {currency}
               {summary.total_orders > 0
-                ? (summary.total_revenue / summary.total_orders).toFixed(2)
+                ? ((summary.total_revenue || 0) / summary.total_orders).toFixed(2)
                 : '0.00'}
             </span>
           </div>
         </TiltCard>
       </div>
 
-      {/* Visual Analytics Grid: Sales & Profit Daily Chart + Top Profit Contributors */}
+      {/* 1-YEAR (ANNUAL) 12-MONTH TABLE - Displayed when 'year' mode is active */}
+      {reportMode === 'year' && (
+        <div className="bg-slate-900/95 border border-slate-700/80 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
+              <div>
+                <h3 className="text-base font-bold text-white m-0">
+                  {selectedYear} Annual Performance Breakdown (12 Months Jan - Dec)
+                </h3>
+                <p className="text-xs text-slate-400 m-0">
+                  Month-by-month financial statement of revenue, cost, net gain, and margins
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 font-mono font-bold text-xs">
+              Year {selectedYear}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto pt-2">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700 uppercase tracking-wider text-[11px]">
+                <tr>
+                  <th className="py-3 px-4">Month</th>
+                  <th className="py-3 px-4 text-center">Orders</th>
+                  <th className="py-3 px-4 text-right">Revenue</th>
+                  <th className="py-3 px-4 text-right">Cost (COGS)</th>
+                  <th className="py-3 px-4 text-right">Net Profit</th>
+                  <th className="py-3 px-4 text-right">Margin %</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {annualMonthlyBreakdown.map((m) => {
+                  const hasSales = m.orders_count > 0;
+                  const isMonthProfitable = m.profit >= 0;
+                  return (
+                    <tr key={m.month} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3 px-4 font-sans font-bold text-white flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                        <span>{m.month} ({m.monthKey})</span>
+                      </td>
+                      <td className="py-3 px-4 text-center text-slate-300">
+                        {m.orders_count}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-white">
+                        {currency}{m.revenue.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-right text-rose-400">
+                        {currency}{m.cost.toFixed(2)}
+                      </td>
+                      <td
+                        className={`py-3 px-4 text-right font-bold ${
+                          !hasSales
+                            ? 'text-slate-500'
+                            : isMonthProfitable
+                            ? 'text-emerald-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {hasSales ? (isMonthProfitable ? '+' : '') : ''}
+                        {currency}{m.profit.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {hasSales ? `${m.margin}%` : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-center font-sans">
+                        {!hasSales ? (
+                          <span className="text-[10px] text-slate-500">No Sales</span>
+                        ) : isMonthProfitable ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            Profit
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                            Loss
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Visual Analytics Grid: Daily Sales & Profit Trend + Top Profit Contributors */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Daily Sales & Profit Trend (8 cols) */}
+        {/* Trend Bar Chart (7 or 8 cols) */}
         <div className="lg:col-span-7 xl:col-span-8 bg-slate-900/95 border border-slate-700/80 rounded-3xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-400" />
-              <h3 className="text-sm font-bold text-white m-0">Daily Revenue & Profit Trend</h3>
+              <h3 className="text-sm font-bold text-white m-0">
+                {reportMode === 'calendar' ? 'Hourly / Daily Sales Distribution' : 'Daily Sales & Profit Trend'}
+              </h3>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5 text-slate-400">
@@ -229,10 +460,9 @@ export default function ProfitLossView({ settings }) {
             </div>
           </div>
 
-          {/* Interactive Bar Visualization */}
           {dailyTrend.length === 0 ? (
             <div className="py-16 text-center text-slate-500 text-xs">
-              No sales recorded for the selected timeline.
+              No sales transactions recorded for this selection. Make a sale in POS Billing to see real-time charts!
             </div>
           ) : (
             <div className="pt-6">
@@ -252,17 +482,17 @@ export default function ProfitLossView({ settings }) {
                       {/* Floating Tooltip */}
                       <div className="opacity-0 group-hover:opacity-100 pointer-events-none absolute -top-14 bg-slate-800 border border-slate-600 px-2.5 py-1.5 rounded-xl shadow-xl text-[10px] text-white z-30 whitespace-nowrap transition">
                         <p className="font-bold text-indigo-300">{day.date}</p>
-                        <p>Rev: {currency}{day.daily_revenue} | Profit: +{currency}{day.daily_profit}</p>
+                        <p>
+                          Rev: {currency}{day.daily_revenue} | Profit: +{currency}{day.daily_profit}
+                        </p>
                       </div>
 
                       {/* Dual Bar pair */}
                       <div className="w-full flex items-end justify-center gap-1 h-full">
-                        {/* Revenue Bar */}
                         <div
                           style={{ height: `${revHeight}%` }}
                           className="w-1/2 max-w-[16px] bg-gradient-to-t from-indigo-600 to-indigo-400 rounded-t-sm transition-all duration-300 group-hover:brightness-125"
                         />
-                        {/* Profit Bar */}
                         <div
                           style={{ height: `${profitHeight}%` }}
                           className="w-1/2 max-w-[16px] bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t-sm transition-all duration-300 group-hover:brightness-125"
@@ -280,12 +510,12 @@ export default function ProfitLossView({ settings }) {
           )}
         </div>
 
-        {/* Top Profitable Items (4 cols) */}
+        {/* Top Profitable Items (5 or 4 cols) */}
         <div className="lg:col-span-5 xl:col-span-4 bg-slate-900/95 border border-slate-700/80 rounded-3xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Award className="w-5 h-5 text-amber-400" />
-              <h3 className="text-sm font-bold text-white m-0">Top Profit Drivers</h3>
+              <h3 className="text-sm font-bold text-white m-0">Top Profit Products</h3>
             </div>
             <span className="text-[10px] text-slate-400 uppercase font-semibold">By Net Gain</span>
           </div>
@@ -319,24 +549,30 @@ export default function ProfitLossView({ settings }) {
 
             {topProfitable.length === 0 && (
               <div className="py-8 text-center text-slate-500 text-xs">
-                No product profit data yet.
+                No product profit data recorded yet.
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Order Transaction History with Profit Column */}
+      {/* Invoices & Orders for this Report Selection */}
       <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl shadow-xl overflow-hidden">
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold text-white m-0">Recent Order History & Profit</h3>
+            <h3 className="text-base font-bold text-white m-0">
+              {reportMode === 'calendar'
+                ? `Invoices & Sales for ${selectedDate}`
+                : reportMode === 'month'
+                ? `Invoices for Month ${selectedMonth}`
+                : 'Invoices & Order Transactions'}
+            </h3>
             <p className="text-xs text-slate-400 m-0">
-              Itemized billing log with individual invoice profit calculations
+              Individual bill records with itemized revenues, cost, and net profit
             </p>
           </div>
           <span className="text-xs font-mono text-slate-400">
-            Showing latest {orders.length} orders
+            {reportOrders.length} {reportOrders.length === 1 ? 'order' : 'orders'} found
           </span>
         </div>
 
@@ -346,7 +582,7 @@ export default function ProfitLossView({ settings }) {
               <tr>
                 <th className="py-3 px-4">Invoice #</th>
                 <th className="py-3 px-4">Customer</th>
-                <th className="py-3 px-4">Date & Time</th>
+                <th className="py-3 px-4">Time</th>
                 <th className="py-3 px-4 text-center">Payment</th>
                 <th className="py-3 px-4 text-right">Revenue</th>
                 <th className="py-3 px-4 text-right">Cost (COGS)</th>
@@ -355,7 +591,7 @@ export default function ProfitLossView({ settings }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {orders.map((o) => (
+              {reportOrders.map((o) => (
                 <tr key={o.id} className="hover:bg-slate-800/50 transition">
                   <td className="py-3 px-4 font-mono font-bold text-indigo-400">
                     {o.invoice_no}
@@ -363,7 +599,7 @@ export default function ProfitLossView({ settings }) {
                   <td className="py-3 px-4 font-medium text-white">
                     {o.customer_name || 'Walk-in'}
                   </td>
-                  <td className="py-3 px-4 text-slate-400">
+                  <td className="py-3 px-4 text-slate-400 font-mono">
                     {new Date(o.created_at).toLocaleString([], {
                       month: 'short',
                       day: 'numeric',
@@ -377,13 +613,13 @@ export default function ProfitLossView({ settings }) {
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right font-mono font-bold text-white">
-                    {currency}{o.total_amount?.toFixed(2)}
+                    {currency}{(o.total_amount || 0).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-right font-mono text-rose-400">
-                    {currency}{o.total_cost?.toFixed(2)}
+                    {currency}{(o.total_cost || 0).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                    +{currency}{o.profit?.toFixed(2)}
+                    +{currency}{(o.profit || 0).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-center">
                     <button
@@ -396,8 +632,51 @@ export default function ProfitLossView({ settings }) {
                   </td>
                 </tr>
               ))}
+
+              {reportOrders.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
+                    No orders recorded for this period.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Inventory Health & Valuation Snapshot */}
+      <div className="bg-slate-900/95 border border-slate-700/80 rounded-3xl p-6 shadow-xl">
+        <div className="flex items-center gap-2 mb-4">
+          <Layers className="w-5 h-5 text-indigo-400" />
+          <h3 className="text-base font-bold text-white m-0">Inventory Valuation & Potential Gain</h3>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-slate-400 block mb-1">Total Items in Stock</span>
+            <span className="text-lg font-black text-white font-mono">
+              {inventoryStats.total_items_in_stock || 0}
+            </span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-slate-400 block mb-1">Stock Cost Value</span>
+            <span className="text-lg font-black text-rose-400 font-mono">
+              {currency}{(inventoryStats.inventory_cost_value || 0).toLocaleString()}
+            </span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-slate-400 block mb-1">Stock Retail Value</span>
+            <span className="text-lg font-black text-indigo-400 font-mono">
+              {currency}{(inventoryStats.inventory_retail_value || 0).toLocaleString()}
+            </span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-slate-400 block mb-1">Potential Net Gain</span>
+            <span className="text-lg font-black text-emerald-400 font-mono">
+              +{currency}{(inventoryStats.potential_profit || 0).toLocaleString()}
+            </span>
+          </div>
         </div>
       </div>
 

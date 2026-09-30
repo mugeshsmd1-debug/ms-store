@@ -1,11 +1,11 @@
 import React from 'react';
-import { ShoppingBag, LayoutGrid, Package, TrendingUp, Settings, AlertTriangle, Sparkles } from 'lucide-react';
+import { ShoppingBag, Package, TrendingUp, Settings, AlertTriangle, Sparkles, Lock, Mail, UserCheck } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStockCount = 0, settings }) {
+export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStockCount = 0, settings, auth, onLock }) {
   const tabs = [
     { id: 'billing', label: 'POS Billing', icon: ShoppingBag, badge: cartCount > 0 ? cartCount : null, badgeColor: 'bg-indigo-500' },
     { id: 'inventory', label: 'Stock & Inventory', icon: Package, badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
-    { id: 'pnl', label: 'Profit & Loss', icon: TrendingUp },
+    { id: 'pnl', label: 'Reports & P&L', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -27,7 +27,7 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
                   POS PRO
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 -mt-0.5 truncate max-w-[200px] sm:max-w-xs m-0">
+              <p className="text-[11px] text-slate-400 -mt-0.5 truncate max-w-[160px] sm:max-w-xs m-0">
                 {settings?.tagline || 'Smart Retail & Billing'}
               </p>
             </div>
@@ -63,17 +63,48 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
             })}
           </nav>
 
-          {/* Low Stock Warning Alert Pill */}
-          {lowStockCount > 0 && (
-            <div
-              onClick={() => setActiveTab('inventory')}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-medium cursor-pointer hover:bg-amber-500/20 transition"
-              title="Click to view low stock items"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>{lowStockCount} items low on stock!</span>
-            </div>
-          )}
+          {/* Right Section: Low Stock Warning & Owner Profile Chip */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {lowStockCount > 0 && (
+              <div
+                onClick={() => setActiveTab('inventory')}
+                className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-medium cursor-pointer hover:bg-amber-500/20 transition"
+                title="Click to view low stock items"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{lowStockCount} items low!</span>
+              </div>
+            )}
+
+            {/* Owner Gmail Profile Chip with Lock Button */}
+            {auth?.owner_email && (
+              <div className="flex items-center gap-2 p-1 pl-2.5 rounded-2xl bg-slate-800/90 border border-slate-700/80">
+                <div className="flex items-center gap-2 max-w-[140px] sm:max-w-[200px]">
+                  <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                    {(auth.owner_name || 'O')[0].toUpperCase()}
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-bold text-slate-200 truncate m-0 leading-tight">
+                      {auth.owner_name || 'Owner'}
+                    </p>
+                    <p className="text-[10px] text-indigo-400 truncate m-0 leading-tight">
+                      {auth.owner_email}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onLock}
+                  title="Lock POS Terminal"
+                  className="p-1.5 rounded-xl bg-slate-700/80 hover:bg-rose-600 text-slate-300 hover:text-white transition flex items-center gap-1 text-[11px] font-semibold"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Lock</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>

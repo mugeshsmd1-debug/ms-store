@@ -152,12 +152,58 @@ export const api = {
     return requestWithFallback(`/orders/${id}`, {}, () => localStore.getOrderById(id));
   },
 
-  // Profit and Loss Analytics
-  async getPnL(range = 'all') {
+  // Authentication & Profile
+  async getAuth() {
+    return requestWithFallback('/auth/profile', {}, () => localStore.getAuth());
+  },
+
+  async saveAuth(authData) {
     return requestWithFallback(
-      `/analytics/pnl?range=${range}`,
+      '/auth/profile',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authData),
+      },
+      () => localStore.saveAuth(authData)
+    );
+  },
+
+  async clearAuth() {
+    localStore.clearAuth();
+    return { success: true };
+  },
+
+  // Wipe all store data to start fresh (Zero dummy data)
+  async clearAllData() {
+    localStore.clearAllData();
+    return requestWithFallback(
+      '/system/reset',
+      { method: 'POST' },
+      () => ({ success: true })
+    );
+  },
+
+  // Profit and Loss Analytics (Multi-horizon: calendar date, month, year, today, week, all)
+  async getPnL(params = 'all') {
+    let queryString = '';
+    if (typeof params === 'string') {
+      queryString = `range=${encodeURIComponent(params)}`;
+    } else if (typeof params === 'object' && params !== null) {
+      const q = new URLSearchParams();
+      if (params.mode) q.append('mode', params.mode);
+      if (params.range) q.append('range', params.range);
+      if (params.date) q.append('date', params.date);
+      if (params.month) q.append('month', params.month);
+      if (params.year) q.append('year', params.year);
+      queryString = q.toString();
+    }
+
+    return requestWithFallback(
+      `/analytics/pnl${queryString ? '?' + queryString : ''}`,
       {},
-      () => localStore.getPnL(range)
+      () => localStore.getPnL(params)
     );
   },
 };
+

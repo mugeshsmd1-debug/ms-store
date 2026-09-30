@@ -477,20 +477,104 @@ app.get('/api/orders/:id', (req, res) => {
 // ---------------------------------------------
 // PROFIT & LOSS (P&L) ANALYTICS ENDPOINTS
 // ---------------------------------------------
+// ---------------------------------------------
+// STORE OWNER AUTHENTICATION & PROFILE
+// ---------------------------------------------
+app.get('/api/auth/profile', (req, res) => {
+  try {
+    const settings = db.prepare('SELECT owner_name, owner_email, owner_pin, phone, shop_name FROM settings WHERE id = 1').get() || {};
+    res.json({
+      owner_name: settings.owner_name || '',
+      owner_email: settings.owner_email || '',
+      owner_pin: settings.owner_pin || '',
+      owner_phone: settings.phone || '',
+      shop_name: settings.shop_name || 'MS Store',
+      is_configured: Boolean(settings.owner_email && settings.owner_pin),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/profile', (req, res) => {
+  try {
+    const { owner_name, owner_email, owner_pin, owner_phone, shop_name } = req.body;
+    db.prepare(`
+      UPDATE settings 
+      SET owner_name = COALESCE(?, owner_name),
+          owner_email = COALESCE(?, owner_email),
+          owner_pin = COALESCE(?, owner_pin),
+          phone = COALESCE(?, phone),
+          shop_name = COALESCE(?, shop_name),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `).run(owner_name, owner_email, owner_pin, owner_phone, shop_name);
+
+    res.json({
+      success: true,
+      owner_name,
+      owner_email,
+      owner_pin,
+      owner_phone,
+      shop_name,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Wipe all store data to start fresh (Zero dummy data)
+app.post('/api/system/reset', (req, res) => {
+  try {
+    if (typeof db.clearAllStoreData === 'function') {
+      db.clearAllStoreData();
+    } else {
+      db.exec('DELETE FROM order_items; DELETE FROM orders; DELETE FROM stock_logs; DELETE FROM products;');
+    }
+    res.json({ success: true, message: 'All store inventory and sales data wiped clean.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------
+// PROFIT & LOSS (P&L) ANALYTICS ENDPOINTS
+// Multi-horizon: Calendar Date, Monthly, 1-Year Annual, Today, Week, All
+// ---------------------------------------------
 app.get('/api/analytics/pnl', (req, res) => {
   try {
-    const { range = 'all' } = req.query; // 'today', 'week', 'month', 'all'
+    const { range = 'all', mode = 'all', date, month, year } = req.query;
 
     let dateFilter = '';
-    if (range === 'today') {
+    let reportTitle = 'All Time Financial Summary';
+    const params = [];
+
+    const effectiveMode = mode !== 'all' ? mode : range;
+
+    if (effectiveMode === 'calendar' && date) {
+      dateFilter = `WHERE date(created_at, 'localtime') = ?`;
+      params.push(date);
+      reportTitle = `Daily Report for ${date}`;
+    } else if (effectiveMode === 'month' && month) {
+      dateFilter = `WHERE strftime('%Y-%m', created_at, 'localtime') = ?`;
+      params.push(month);
+      reportTitle = `Monthly Report for ${month}`;
+    } else if (effectiveMode === 'year' && year) {
+      dateFilter = `WHERE strftime('%Y', created_at, 'localtime') = ?`;
+      params.push(String(year));
+      reportTitle = `Annual Report for ${year}`;
+    } else if (effectiveMode === 'today') {
       dateFilter = `WHERE date(created_at, 'localtime') = date('now', 'localtime')`;
-    } else if (range === 'week') {
+      reportTitle = `Today's Daily Report`;
+    } else if (effectiveMode === 'week') {
       dateFilter = `WHERE date(created_at, 'localtime') >= date('now', '-7 days', 'localtime')`;
-    } else if (range === 'month') {
+      reportTitle = `Last 7 Days Report`;
+    } else if (effectiveMode === 'month') {
       dateFilter = `WHERE date(created_at, 'localtime') >= date('now', '-30 days', 'localtime')`;
+      reportTitle = `Last 30 Days Report`;
     }
 
-    // Overall Revenue, Cost, Profit from completed orders
+    // Overall Revenue, Cost, Profit from completed orders in range
     const summary = db.prepare(`
       SELECT 
         COUNT(*) as total_orders,
@@ -502,14 +586,14 @@ app.get('/api/analytics/pnl', (req, res) => {
         COALESCE(SUM(profit), 0) as net_profit
       FROM orders
       ${dateFilter}
-    `).get();
+    `).get(...params);
 
     const revenue = summary.total_revenue;
     const profit = summary.net_profit;
     const margin = revenue > 0 ? parseFloat(((profit / revenue) * 100).toFixed(1)) : 0;
 
-    // Daily Sales & Profit Trend (Last 14 days)
-    const dailyTrend = db.prepare(`
+    // Daily Sales & Profit Trend for chart
+    let trendSql = `
       SELECT 
         date(created_at, 'localtime') as date,
         COUNT(*) as order_count,
@@ -517,12 +601,52 @@ app.get('/api/analytics/pnl', (req, res) => {
         ROUND(SUM(total_cost), 2) as daily_cost,
         ROUND(SUM(profit), 2) as daily_profit
       FROM orders
-      WHERE date(created_at, 'localtime') >= date('now', '-14 days', 'localtime')
+      ${dateFilter}
       GROUP BY date(created_at, 'localtime')
       ORDER BY date ASC
-    `).all();
+    `;
+    const dailyTrend = db.prepare(trendSql).all(...params);
+
+    // Filtered orders list for detailed inspection in calendar/daily view
+    const filteredOrders = db.prepare(`
+      SELECT * FROM orders
+      ${dateFilter}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).all(...params);
+
+    // 1-Year Monthly Breakdown (Jan - Dec)
+    const targetYear = String(year || new Date().getFullYear());
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const annualMonthlyBreakdown = monthNames.map((mName, idx) => {
+      const monthPrefix = `${targetYear}-${String(idx + 1).padStart(2, '0')}`;
+      const mRow = db.prepare(`
+        SELECT 
+          COUNT(*) as orders_count,
+          COALESCE(SUM(total_amount), 0) as revenue,
+          COALESCE(SUM(total_cost), 0) as cost,
+          COALESCE(SUM(profit), 0) as profit
+        FROM orders
+        WHERE strftime('%Y-%m', created_at, 'localtime') = ?
+      `).get(monthPrefix);
+
+      const mRev = mRow.revenue;
+      const mProfit = mRow.profit;
+      const mMargin = mRev > 0 ? parseFloat(((mProfit / mRev) * 100).toFixed(1)) : 0;
+
+      return {
+        month: mName,
+        monthKey: monthPrefix,
+        orders_count: mRow.orders_count,
+        revenue: parseFloat(mRev.toFixed(2)),
+        cost: parseFloat(mRow.cost.toFixed(2)),
+        profit: parseFloat(mProfit.toFixed(2)),
+        margin: mMargin,
+      };
+    });
 
     // Top Profit Contribution Products
+    let topFilter = dateFilter.length > 0 ? dateFilter.replace('WHERE', 'WHERE o.') : '';
     const topProfitable = db.prepare(`
       SELECT 
         oi.product_name,
@@ -532,11 +656,11 @@ app.get('/api/analytics/pnl', (req, res) => {
         ROUND(SUM(oi.profit), 2) as total_profit
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
-      ${dateFilter.replace('WHERE', 'WHERE o.')}
+      ${topFilter}
       GROUP BY oi.sku, oi.product_name
       ORDER BY total_profit DESC
-      LIMIT 6
-    `).all();
+      LIMIT 8
+    `).all(...params);
 
     // Inventory Valuation & Stock Health (Current snapshot)
     const inventoryStats = db.prepare(`
@@ -551,16 +675,8 @@ app.get('/api/analytics/pnl', (req, res) => {
       FROM products
     `).get();
 
-    // Recent Stock Activity Log
-    const recentStockLogs = db.prepare(`
-      SELECT sl.*, p.name as product_name, p.sku
-      FROM stock_logs sl
-      JOIN products p ON p.id = sl.product_id
-      ORDER BY sl.created_at DESC
-      LIMIT 10
-    `).all();
-
     res.json({
+      title: reportTitle,
       summary: {
         total_orders: summary.total_orders,
         total_revenue: parseFloat(summary.total_revenue.toFixed(2)),
@@ -573,7 +689,9 @@ app.get('/api/analytics/pnl', (req, res) => {
         is_profit: summary.net_profit >= 0
       },
       dailyTrend,
+      annualMonthlyBreakdown,
       topProfitable,
+      orders: filteredOrders,
       inventoryStats: {
         total_product_types: inventoryStats.total_product_types,
         total_items_in_stock: inventoryStats.total_items_in_stock,
@@ -582,13 +700,13 @@ app.get('/api/analytics/pnl', (req, res) => {
         potential_profit: parseFloat(inventoryStats.potential_profit.toFixed(2)),
         low_stock_count: inventoryStats.low_stock_count,
         out_of_stock_count: inventoryStats.out_of_stock_count
-      },
-      recentStockLogs
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // Start Server
 app.listen(PORT, () => {

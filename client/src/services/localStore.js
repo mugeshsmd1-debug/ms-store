@@ -4,71 +4,25 @@ const STORAGE_KEYS = {
   PRODUCTS: 'ms_store_products',
   ORDERS: 'ms_store_orders',
   STOCK_LOGS: 'ms_store_stock_logs',
+  AUTH: 'ms_store_auth',
 };
 
 const DEFAULT_SETTINGS = {
   id: 1,
   shop_name: 'MS Store',
   tagline: 'Smart Retail & Inventory Management',
-  phone: '+91 98765 43210',
-  address: '124 Market Road, Commercial Hub',
+  phone: '',
+  address: '',
   currency_symbol: '₹',
   tax_percentage: 5.0,
+  owner_name: '',
+  owner_email: '',
+  owner_pin: '',
 };
 
-const DEFAULT_PRODUCTS = [
-  { id: 1, name: 'Wireless Optical Mouse', sku: 'ELEC-001', category: 'Electronics', cost_price: 250, selling_price: 499, stock_quantity: 28, low_stock_threshold: 5, unit: 'pcs', image_emoji: '🖱️' },
-  { id: 2, name: 'USB-C Fast Charging Cable', sku: 'ELEC-002', category: 'Electronics', cost_price: 120, selling_price: 299, stock_quantity: 45, low_stock_threshold: 10, unit: 'pcs', image_emoji: '🔌' },
-  { id: 3, name: 'Wireless Mechanical Keyboard', sku: 'ELEC-003', category: 'Electronics', cost_price: 1400, selling_price: 2499, stock_quantity: 4, low_stock_threshold: 5, unit: 'pcs', image_emoji: '⌨️' },
-  { id: 4, name: 'Bluetooth Speaker 10W', sku: 'ELEC-004', category: 'Electronics', cost_price: 750, selling_price: 1399, stock_quantity: 9, low_stock_threshold: 5, unit: 'pcs', image_emoji: '🔊' },
-  { id: 5, name: 'Organic Green Tea 100g', sku: 'GROC-001', category: 'Beverages', cost_price: 110, selling_price: 185, stock_quantity: 22, low_stock_threshold: 8, unit: 'box', image_emoji: '🍵' },
-  { id: 6, name: 'Almond Milk 1L', sku: 'GROC-002', category: 'Beverages', cost_price: 135, selling_price: 210, stock_quantity: 3, low_stock_threshold: 6, unit: 'bottle', image_emoji: '🥛' },
-  { id: 7, name: 'Premium Basmati Rice 5kg', sku: 'GROC-003', category: 'Groceries', cost_price: 360, selling_price: 495, stock_quantity: 15, low_stock_threshold: 5, unit: 'bag', image_emoji: '🍚' },
-  { id: 8, name: 'Raw Natural Honey 500g', sku: 'GROC-004', category: 'Groceries', cost_price: 175, selling_price: 280, stock_quantity: 18, low_stock_threshold: 5, unit: 'jar', image_emoji: '🍯' },
-  { id: 9, name: 'Stainless Steel Water Bottle 1L', sku: 'HOME-001', category: 'Lifestyle', cost_price: 190, selling_price: 380, stock_quantity: 14, low_stock_threshold: 5, unit: 'pcs', image_emoji: '🧴' },
-  { id: 10, name: 'LED Desk Lamp Adjustable', sku: 'HOME-002', category: 'Lifestyle', cost_price: 320, selling_price: 620, stock_quantity: 12, low_stock_threshold: 4, unit: 'pcs', image_emoji: '💡' },
-  { id: 11, name: 'A5 Hardcover Journal Notebook', sku: 'STAT-001', category: 'Stationery', cost_price: 65, selling_price: 140, stock_quantity: 48, low_stock_threshold: 10, unit: 'pcs', image_emoji: '📓' },
-  { id: 12, name: 'Luxury Gel Pen 0.5mm Pack', sku: 'STAT-002', category: 'Stationery', cost_price: 45, selling_price: 99, stock_quantity: 60, low_stock_threshold: 15, unit: 'pack', image_emoji: '🖊️' },
-];
-
-const DEFAULT_ORDERS = [
-  {
-    id: 1,
-    invoice_no: 'INV-1001',
-    customer_name: 'Rahul Sharma',
-    customer_phone: '9876501234',
-    subtotal: 1097,
-    discount_amount: 20,
-    tax_amount: 53.85,
-    total_amount: 1130.85,
-    total_cost: 490,
-    profit: 587,
-    payment_method: 'UPI',
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    items: [
-      { product_name: 'Wireless Optical Mouse', sku: 'ELEC-001', cost_price: 250, selling_price: 499, quantity: 1, subtotal: 499, profit: 249 },
-      { product_name: 'USB-C Fast Charging Cable', sku: 'ELEC-002', cost_price: 120, selling_price: 299, quantity: 2, subtotal: 598, profit: 358 }
-    ]
-  },
-  {
-    id: 2,
-    invoice_no: 'INV-1002',
-    customer_name: 'Priya Patel',
-    customer_phone: '9822334455',
-    subtotal: 1270,
-    discount_amount: 50,
-    tax_amount: 61,
-    total_amount: 1281,
-    total_cost: 895,
-    profit: 325,
-    payment_method: 'Card',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    items: [
-      { product_name: 'Premium Basmati Rice 5kg', sku: 'GROC-003', cost_price: 360, selling_price: 495, quantity: 2, subtotal: 990, profit: 270 },
-      { product_name: 'Raw Natural Honey 500g', sku: 'GROC-004', cost_price: 175, selling_price: 280, quantity: 1, subtotal: 280, profit: 105 }
-    ]
-  }
-];
+// Clean slate: No dummy products or orders!
+const DEFAULT_PRODUCTS = [];
+const DEFAULT_ORDERS = [];
 
 function getStored(key, defaultVal) {
   try {
@@ -92,6 +46,33 @@ function setStored(key, value) {
 }
 
 export const localStore = {
+  // Authentication & Profile
+  getAuth() {
+    return getStored(STORAGE_KEYS.AUTH, null);
+  },
+
+  saveAuth(authData) {
+    setStored(STORAGE_KEYS.AUTH, authData);
+    // Also sync to store settings
+    const settings = this.getSettings();
+    this.updateSettings({
+      ...settings,
+      owner_name: authData.owner_name || settings.owner_name,
+      owner_email: authData.owner_email || settings.owner_email,
+      owner_pin: authData.owner_pin || settings.owner_pin,
+      phone: authData.owner_phone || settings.phone,
+      shop_name: authData.shop_name || settings.shop_name,
+    });
+    return authData;
+  },
+
+  clearAuth() {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.AUTH);
+    } catch {}
+  },
+
+  // Settings
   getSettings() {
     return getStored(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
   },
@@ -103,6 +84,22 @@ export const localStore = {
     return updated;
   },
 
+  // Wipe / Reset to start completely fresh
+  clearAllData() {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
+      localStorage.removeItem(STORAGE_KEYS.ORDERS);
+      localStorage.removeItem(STORAGE_KEYS.STOCK_LOGS);
+      setStored(STORAGE_KEYS.PRODUCTS, []);
+      setStored(STORAGE_KEYS.ORDERS, []);
+      setStored(STORAGE_KEYS.STOCK_LOGS, []);
+    } catch (e) {
+      console.error(e);
+    }
+    return { success: true };
+  },
+
+  // Products
   getProducts({ search = '', category = 'All', lowStockOnly = false } = {}) {
     let prods = getStored(STORAGE_KEYS.PRODUCTS, DEFAULT_PRODUCTS);
 
@@ -148,6 +145,7 @@ export const localStore = {
       low_stock_threshold: parseInt(productData.low_stock_threshold, 10) || 5,
       unit: productData.unit || 'pcs',
       image_emoji: productData.image_emoji || '📦',
+      gst_percentage: productData.gst_percentage !== undefined ? parseFloat(productData.gst_percentage) : 5.0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -175,6 +173,7 @@ export const localStore = {
       selling_price: productData.selling_price !== undefined ? parseFloat(productData.selling_price) : prods[index].selling_price,
       stock_quantity: productData.stock_quantity !== undefined ? parseInt(productData.stock_quantity, 10) : prods[index].stock_quantity,
       low_stock_threshold: productData.low_stock_threshold !== undefined ? parseInt(productData.low_stock_threshold, 10) : prods[index].low_stock_threshold,
+      gst_percentage: productData.gst_percentage !== undefined ? parseFloat(productData.gst_percentage) : prods[index].gst_percentage,
       updated_at: new Date().toISOString(),
     };
 
@@ -216,6 +215,7 @@ export const localStore = {
     return { message: 'Product deleted', product: target };
   },
 
+  // Orders
   createOrder({ items, customer_name, customer_phone, discount_amount = 0, tax_percentage, payment_method = 'Cash' }) {
     const prods = getStored(STORAGE_KEYS.PRODUCTS, DEFAULT_PRODUCTS);
     const settings = this.getSettings();
@@ -316,7 +316,7 @@ export const localStore = {
     return newOrder;
   },
 
-  getOrders({ limit = 50, offset = 0 } = {}) {
+  getOrders({ limit = 100, offset = 0 } = {}) {
     const orders = getStored(STORAGE_KEYS.ORDERS, DEFAULT_ORDERS);
     return orders.slice(offset, offset + limit).map((o) => ({
       ...o,
@@ -331,22 +331,36 @@ export const localStore = {
     return found;
   },
 
-  getPnL(range = 'all') {
+  // Comprehensive Reporting Engine: Daily, Calendar, Monthly, 1-Year (Annual)
+  getPnL(params = {}) {
     const orders = getStored(STORAGE_KEYS.ORDERS, DEFAULT_ORDERS);
     const prods = getStored(STORAGE_KEYS.PRODUCTS, DEFAULT_PRODUCTS);
-
-    let filteredOrders = orders;
     const now = new Date();
 
-    if (range === 'today') {
+    const mode = typeof params === 'string' ? params : (params.mode || 'all');
+    let filteredOrders = orders;
+    let reportTitle = 'All Time Summary';
+
+    if (mode === 'calendar' && params.date) {
+      // Specific calendar day
+      filteredOrders = orders.filter((o) => o.created_at.slice(0, 10) === params.date);
+      reportTitle = `Daily Report for ${params.date}`;
+    } else if (mode === 'month' && params.month) {
+      // Specific month (e.g. '2026-09')
+      filteredOrders = orders.filter((o) => o.created_at.slice(0, 7) === params.month);
+      reportTitle = `Monthly Report for ${params.month}`;
+    } else if (mode === 'year' && params.year) {
+      // 1-Year Annual Report (e.g. '2026')
+      filteredOrders = orders.filter((o) => o.created_at.slice(0, 4) === String(params.year));
+      reportTitle = `Annual Report for ${params.year}`;
+    } else if (mode === 'today') {
       const todayStr = now.toISOString().slice(0, 10);
       filteredOrders = orders.filter((o) => o.created_at.slice(0, 10) === todayStr);
-    } else if (range === 'week') {
+      reportTitle = `Today's Daily Report`;
+    } else if (mode === 'week') {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
       filteredOrders = orders.filter((o) => new Date(o.created_at) >= sevenDaysAgo);
-    } else if (range === 'month') {
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-      filteredOrders = orders.filter((o) => new Date(o.created_at) >= thirtyDaysAgo);
+      reportTitle = `Last 7 Days Report`;
     }
 
     const totalOrders = filteredOrders.length;
@@ -358,7 +372,7 @@ export const localStore = {
     const netProfit = filteredOrders.reduce((sum, o) => sum + (o.profit || 0), 0);
     const profitMargin = totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0;
 
-    // Daily trend
+    // Daily breakdown for trend
     const dailyMap = {};
     for (const o of filteredOrders) {
       const dateKey = o.created_at.slice(0, 10);
@@ -372,7 +386,29 @@ export const localStore = {
     }
     const dailyTrend = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
 
-    // Top profitable
+    // 1-Year Monthly Breakdown (Jan through Dec) for Annual reports
+    const targetYear = params.year || now.getFullYear();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const annualMonthlyBreakdown = months.map((mName, mIdx) => {
+      const monthPrefix = `${targetYear}-${String(mIdx + 1).padStart(2, '0')}`;
+      const mOrders = orders.filter((o) => o.created_at.slice(0, 7) === monthPrefix);
+      const mRevenue = mOrders.reduce((s, o) => s + (o.total_amount || 0), 0);
+      const mCost = mOrders.reduce((s, o) => s + (o.total_cost || 0), 0);
+      const mProfit = mOrders.reduce((s, o) => s + (o.profit || 0), 0);
+      const mMargin = mRevenue > 0 ? parseFloat(((mProfit / mRevenue) * 100).toFixed(1)) : 0;
+
+      return {
+        month: mName,
+        monthKey: monthPrefix,
+        orders_count: mOrders.length,
+        revenue: parseFloat(mRevenue.toFixed(2)),
+        cost: parseFloat(mCost.toFixed(2)),
+        profit: parseFloat(mProfit.toFixed(2)),
+        margin: mMargin,
+      };
+    });
+
+    // Top profitable products
     const itemMap = {};
     for (const o of filteredOrders) {
       for (const item of o.items || []) {
@@ -387,13 +423,14 @@ export const localStore = {
     }
     const topProfitable = Object.values(itemMap)
       .sort((a, b) => b.total_profit - a.total_profit)
-      .slice(0, 6);
+      .slice(0, 8);
 
     const totalStock = prods.reduce((sum, p) => sum + p.stock_quantity, 0);
     const costVal = prods.reduce((sum, p) => sum + p.cost_price * p.stock_quantity, 0);
     const retailVal = prods.reduce((sum, p) => sum + p.selling_price * p.stock_quantity, 0);
 
     return {
+      title: reportTitle,
       summary: {
         total_orders: totalOrders,
         total_revenue: parseFloat(totalRevenue.toFixed(2)),
@@ -406,7 +443,9 @@ export const localStore = {
         is_profit: netProfit >= 0,
       },
       dailyTrend,
+      annualMonthlyBreakdown,
       topProfitable,
+      orders: filteredOrders,
       inventoryStats: {
         total_product_types: prods.length,
         total_items_in_stock: totalStock,
@@ -416,7 +455,6 @@ export const localStore = {
         low_stock_count: prods.filter((p) => p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0).length,
         out_of_stock_count: prods.filter((p) => p.stock_quantity === 0).length,
       },
-      recentStockLogs: [],
     };
   },
 };

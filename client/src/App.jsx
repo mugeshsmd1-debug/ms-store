@@ -4,6 +4,7 @@ import BillingView from './views/BillingView';
 import InventoryView from './views/InventoryView';
 import ProfitLossView from './views/ProfitLossView';
 import SettingsView from './views/SettingsView';
+import AuthModal from './components/AuthModal';
 import { api } from './services/api';
 
 export default function App() {
@@ -11,20 +12,29 @@ export default function App() {
   const [settings, setSettings] = useState(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [auth, setAuth] = useState(null);
+  const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all initial store data
+  // Fetch all initial store data and auth profile
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      const [settingsData, productsData, categoriesData] = await Promise.all([
+      const [settingsData, productsData, categoriesData, authData] = await Promise.all([
         api.getSettings(),
         api.getProducts(),
         api.getCategories(),
+        api.getAuth(),
       ]);
       setSettings(settingsData);
       setProducts(productsData);
       setCategories(categoriesData);
+      setAuth(authData);
+
+      // If no owner profile is set up, terminal is locked / requires setup
+      if (!authData?.owner_email || !authData?.owner_pin) {
+        setIsLocked(true);
+      }
     } catch (err) {
       console.error('Failed to load store data:', err);
     } finally {
@@ -49,6 +59,21 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
+  const handleAuthenticated = async (authRecord) => {
+    try {
+      const saved = await api.saveAuth(authRecord);
+      setAuth(saved);
+      setIsLocked(false);
+      if (saved.shop_name && settings) {
+        setSettings((prev) => ({ ...prev, shop_name: saved.shop_name }));
+      }
+    } catch (err) {
+      console.error('Failed to save auth:', err);
+      setAuth(authRecord);
+      setIsLocked(false);
+    }
+  };
+
   // Count low stock items for navbar warning badge
   const lowStockCount = products.filter(
     (p) => p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0
@@ -63,6 +88,9 @@ export default function App() {
     );
   }
 
+  // Show Auth Modal if not authenticated or terminal is locked
+  const shouldShowAuthModal = isLocked || !auth?.owner_email || !auth?.owner_pin;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
       {/* Top Sticky Navigation */}
@@ -71,6 +99,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         lowStockCount={lowStockCount}
         settings={settings}
+        auth={auth}
+        onLock={() => setIsLocked(true)}
       />
 
       {/* Main Tab View Content */}
@@ -104,9 +134,21 @@ export default function App() {
           <SettingsView
             settings={settings}
             onSettingsUpdated={(newSettings) => setSettings(newSettings)}
+            auth={auth}
+            onAuthUpdated={(newAuth) => setAuth(newAuth)}
+            onResetData={loadInitialData}
           />
         )}
       </main>
+
+      {/* Owner Authentication / Terminal Lock Modal */}
+      {shouldShowAuthModal && (
+        <AuthModal
+          auth={auth}
+          settings={settings}
+          onAuthenticated={handleAuthenticated}
+        />
+      )}
 
       {/* Footer */}
       <footer className="no-print border-t border-slate-800/80 bg-slate-950/60 py-4 text-center text-xs text-slate-500">
@@ -115,7 +157,7 @@ export default function App() {
             {settings?.shop_name || 'MS Store'} • POS, Stock & Profit/Loss Management
           </p>
           <p className="m-0 text-[11px] text-slate-400">
-            Powered by Node.js, SQLite & React 3D Engine
+            Authenticated for: {auth?.owner_email || 'Owner Setup Pending'}
           </p>
         </div>
       </footer>
