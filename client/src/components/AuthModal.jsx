@@ -22,30 +22,20 @@ import { api } from '../services/api';
 export default function AuthModal({ onAuthenticated }) {
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'signup'
 
-  // Backend connection state
-  const [backendUrl, setBackendUrl] = useState(() => api.getCustomBackendUrl() || (api.getEffectiveBase() !== '/api' ? api.getEffectiveBase() : ''));
-  const [showBackendConfig, setShowBackendConfig] = useState(() => {
-    return api.getEffectiveBase() === '/api' && typeof window !== 'undefined' && window.location.hostname !== 'localhost';
-  });
+  // Supabase cloud connection state
   const [testingBackend, setTestingBackend] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
 
   const handleSaveAndTestBackend = async () => {
-    if (!backendUrl.trim()) {
-      api.setCustomBackendUrl('');
-      setBackendStatus({ ok: false, message: 'Custom URL cleared.' });
-      return;
-    }
-    api.setCustomBackendUrl(backendUrl);
     setTestingBackend(true);
     setBackendStatus(null);
     try {
-      const res = await api.testBackendConnection(backendUrl);
+      const res = await api.testBackendConnection();
       if (res.ok) {
-        setBackendStatus({ ok: true, message: 'Connected to Cloud Backend successfully!' });
+        setBackendStatus({ ok: true, message: 'Connected to Supabase PostgreSQL cloud database successfully!' });
         setError('');
       } else {
-        setBackendStatus({ ok: false, message: `Could not reach ${res.url}: ${res.error}. If Render is waking up, wait ~30s and try again.` });
+        setBackendStatus({ ok: false, message: `Could not connect to Supabase: ${res.error}` });
       }
     } catch (e) {
       setBackendStatus({ ok: false, message: e.message });
@@ -429,63 +419,41 @@ export default function AuthModal({ onAuthenticated }) {
           </form>
         )}
 
-        {/* Backend Cloud Server Config */}
+        {/* Supabase Cloud Database Status */}
         <div className="mt-5 pt-4 border-t border-slate-800">
           <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
             <span className="flex items-center gap-1.5 font-semibold text-slate-300">
-              <Globe className="w-3.5 h-3.5 text-sky-400" />
-              <span>Backend Cloud Server:</span>
+              <Globe className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cloud Database:</span>
             </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Supabase PostgreSQL
+            </span>
+          </div>
+          <div className="text-[11px] font-mono text-slate-400 truncate flex items-center justify-between gap-2 mt-1">
+            <span className="truncate">{api.getEffectiveBase()}</span>
             <button
               type="button"
-              onClick={() => setShowBackendConfig(!showBackendConfig)}
-              className="text-indigo-400 hover:text-indigo-300 underline font-medium"
+              disabled={testingBackend}
+              onClick={handleSaveAndTestBackend}
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline flex-shrink-0 flex items-center gap-1 disabled:opacity-50"
             >
-              {showBackendConfig ? 'Hide URL Config' : 'Change / Set URL'}
+              {testingBackend ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+              <span>{testingBackend ? 'Checking...' : 'Test Connection'}</span>
             </button>
           </div>
-          <div className="text-[11px] font-mono text-slate-400 truncate">
-            {api.getEffectiveBase() === '/api' ? '⚠️ Local /api (Not connected to Render)' : api.getEffectiveBase()}
-          </div>
 
-          {showBackendConfig && (
-            <div className="mt-2.5 p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2 animate-fadeIn">
-              <label className="block text-[11px] font-semibold text-slate-300">
-                Render Backend URL
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  placeholder="https://ms-store-xxxx.onrender.com"
-                  value={backendUrl}
-                  onChange={(e) => setBackendUrl(e.target.value)}
-                  className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-                <button
-                  type="button"
-                  disabled={testingBackend}
-                  onClick={handleSaveAndTestBackend}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {testingBackend ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>{testingBackend ? 'Testing...' : 'Connect'}</span>
-                </button>
-              </div>
-              {backendStatus && (
-                <div
-                  className={`text-[11px] p-2 rounded-xl flex items-center gap-1.5 ${
-                    backendStatus.ok
-                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                      : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                  }`}
-                >
-                  {backendStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />}
-                  <span>{backendStatus.message}</span>
-                </div>
-              )}
-              <p className="text-[10px] text-slate-500 m-0">
-                💡 Paste your Render backend web service URL here. Once connected, your store runs in the cloud from any device.
-              </p>
+          {backendStatus && (
+            <div
+              className={`mt-2 text-[11px] p-2 rounded-xl flex items-center gap-1.5 ${
+                backendStatus.ok
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+              }`}
+            >
+              {backendStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />}
+              <span>{backendStatus.message}</span>
             </div>
           )}
         </div>

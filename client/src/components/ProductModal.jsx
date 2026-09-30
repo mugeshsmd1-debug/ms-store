@@ -1,7 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Tag, DollarSign, Package, AlertTriangle, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Sparkles, Tag, DollarSign, Package, AlertTriangle, Layers, Upload, Image as ImageIcon, Smile, Trash2, Camera, Link as LinkIcon } from 'lucide-react';
+import ProductIcon from './ProductIcon';
 
 const EMOJI_OPTIONS = ['📦', '🖱️', '🔌', '⌨️', '🔊', '🍵', '🥛', '🍚', '🍯', '🧴', '💡', '📓', '🖊️', '🎧', '🍫', '🍎', '👕', '📱', '🧼', '☕'];
+
+const compressImage = (file, maxSize = 256, quality = 0.85) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let dataUrl = canvas.toDataURL('image/webp', quality);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = readerEvent.target.result;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function ProductModal({ product, categories = [], currencySymbol = '₹', isOpen, onClose, onSave }) {
   const [formData, setFormData] = useState({
@@ -17,7 +59,11 @@ export default function ProductModal({ product, categories = [], currencySymbol 
     gst_percentage: '5',
   });
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [iconTab, setIconTab] = useState('upload'); // 'upload' | 'emoji' | 'url'
+  const [customUrl, setCustomUrl] = useState('');
   const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (product) {
@@ -134,6 +180,55 @@ export default function ProductModal({ product, categories = [], currencySymbol 
     }));
   };
 
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select a valid image file (PNG, JPG, WebP, etc.).');
+      return;
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      setError('Image file is too large (maximum 15 MB).');
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      setError('');
+      const compressedDataUrl = await compressImage(file, 256, 0.85);
+      setFormData((prev) => ({
+        ...prev,
+        image_emoji: compressedDataUrl,
+      }));
+    } catch (err) {
+      console.error('Failed to compress image:', err);
+      setError('Failed to process image. Please try another photo.');
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setFormData((prev) => ({
+      ...prev,
+      image_emoji: '📦',
+    }));
+  };
+
+  const handleApplyUrl = () => {
+    if (!customUrl.trim()) return;
+    setFormData((prev) => ({
+      ...prev,
+      image_emoji: customUrl.trim(),
+    }));
+    setCustomUrl('');
+  };
+
   // Unique category suggestions
   const uniqueCategories = Array.from(
     new Set([...categories, 'Electronics', 'Groceries', 'Beverages', 'Lifestyle', 'Stationery', 'General'])
@@ -145,9 +240,9 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-800/90 border-b border-slate-700">
           <div className="flex items-center gap-3">
-            <span className="text-2xl p-2 bg-indigo-500/20 rounded-xl border border-indigo-500/30">
-              {formData.image_emoji}
-            </span>
+            <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-indigo-500/20 rounded-xl border border-indigo-500/30 overflow-hidden">
+              <ProductIcon icon={formData.image_emoji} className="w-10 h-10 object-cover" textClassName="text-2xl" />
+            </div>
             <div>
               <h2 className="text-lg font-bold text-white">
                 {product ? 'Edit Product' : 'Add New Product'}
@@ -174,27 +269,157 @@ export default function ProductModal({ product, categories = [], currencySymbol 
             </div>
           )}
 
-          {/* Emoji Selection Bar */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Select Product Icon
-            </label>
-            <div className="flex flex-wrap gap-1.5 p-2 bg-slate-800/60 rounded-xl border border-slate-700/60">
-              {EMOJI_OPTIONS.map((emoji) => (
+          {/* Product Icon Selection (Gallery / Files / Emoji / URL) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-300">
+                Product Icon / Image
+              </label>
+              <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-xs">
                 <button
                   type="button"
-                  key={emoji}
-                  onClick={() => setFormData({ ...formData, image_emoji: emoji })}
-                  className={`w-9 h-9 text-lg flex items-center justify-center rounded-lg transition ${
-                    formData.image_emoji === emoji
-                      ? 'bg-indigo-600 text-white shadow-md scale-110'
-                      : 'hover:bg-slate-700/70 text-slate-300'
+                  onClick={() => setIconTab('upload')}
+                  className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
+                    iconTab === 'upload' ? 'bg-indigo-600 text-white font-medium shadow' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {emoji}
+                  <Upload className="w-3.5 h-3.5" />
+                  Gallery / Files
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setIconTab('emoji')}
+                  className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
+                    iconTab === 'emoji' ? 'bg-indigo-600 text-white font-medium shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Smile className="w-3.5 h-3.5" />
+                  Emojis
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIconTab('url')}
+                  className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
+                    iconTab === 'url' ? 'bg-indigo-600 text-white font-medium shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                  Web URL
+                </button>
+              </div>
             </div>
+
+            {/* Hidden file input supporting camera & gallery */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {iconTab === 'upload' && (
+              <div>
+                {formData.image_emoji && (formData.image_emoji.startsWith('data:image') || formData.image_emoji.startsWith('http') || formData.image_emoji.startsWith('/')) ? (
+                  <div className="flex items-center gap-3 p-3 bg-slate-800/80 rounded-2xl border border-slate-700">
+                    <img
+                      src={formData.image_emoji}
+                      alt="Product preview"
+                      className="w-14 h-14 rounded-xl object-cover border border-slate-600 shadow-md bg-slate-900"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                        <ImageIcon className="w-3.5 h-3.5" /> Custom Image Attached
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        Compressed & ready to save with product
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium rounded-lg transition flex items-center gap-1"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        {uploadingImage ? 'Loading...' : 'Change'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition"
+                        title="Remove custom image and reset"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-700 hover:border-indigo-500/60 bg-slate-800/40 hover:bg-slate-800/80 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition group"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-indigo-500/10 group-hover:bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2 transition">
+                      {uploadingImage ? (
+                        <Sparkles className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      )}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-200">
+                      {uploadingImage ? 'Compressing image...' : 'Click to select from Gallery or Files'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 text-center">
+                      Upload from phone camera, photo gallery, or PC files (PNG, JPG, WebP)
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {iconTab === 'emoji' && (
+              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-800/60 rounded-xl border border-slate-700/60 max-h-36 overflow-y-auto">
+                {EMOJI_OPTIONS.map((emoji) => (
+                  <button
+                    type="button"
+                    key={emoji}
+                    onClick={() => setFormData({ ...formData, image_emoji: emoji })}
+                    className={`w-9 h-9 text-lg flex items-center justify-center rounded-lg transition ${
+                      formData.image_emoji === emoji
+                        ? 'bg-indigo-600 text-white shadow-md scale-110'
+                        : 'hover:bg-slate-700/70 text-slate-300'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {iconTab === 'url' && (
+              <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="https://example.com/product-image.png"
+                    className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyUrl}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Paste any public direct image URL link
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Product Name */}

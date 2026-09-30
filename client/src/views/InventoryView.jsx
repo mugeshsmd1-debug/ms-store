@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Package, Plus, Search, Filter, AlertTriangle, ArrowUpDown, Edit, Trash2, Box, Eye, Layers, Clock, CheckCircle2 } from 'lucide-react';
 import ProductModal from '../components/ProductModal';
+import ProductIcon from '../components/ProductIcon';
 import RestockModal from '../components/RestockModal';
 import Warehouse3D from '../components/Warehouse3D';
 import TiltCard from '../components/TiltCard';
@@ -316,9 +317,9 @@ export default function InventoryView({ products = [], categories = [], settings
                       {/* Product Name & SKU */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <span className="text-2xl p-1 bg-slate-800 rounded-lg">
-                            {p.image_emoji}
-                          </span>
+                          <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center p-0.5 bg-slate-800 rounded-lg border border-slate-700/60 overflow-hidden">
+                            <ProductIcon icon={p.image_emoji} className="w-8 h-8 object-cover" textClassName="text-2xl" />
+                          </div>
                           <div>
                             <p className="font-bold text-white text-sm m-0">{p.name}</p>
                             <p className="text-[11px] text-slate-400 font-mono m-0">{p.sku}</p>

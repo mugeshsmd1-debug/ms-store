@@ -16,7 +16,14 @@ import {
   Clock,
   Sparkles,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2,
+  AlertTriangle,
+  X,
+  Lock,
+  Eye,
+  EyeOff,
+  Key
 } from 'lucide-react';
 import TiltCard from '../components/TiltCard';
 import ReceiptModal from '../components/ReceiptModal';
@@ -38,7 +45,95 @@ export default function ProfitLossView({ settings }) {
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Single invoice delete with password state
+  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
+
+  // Bulk bill deletion with password state
+  const [showClearBillsConfirm, setShowClearBillsConfirm] = useState(false);
+  const [clearBillsPassword, setClearBillsPassword] = useState('');
+  const [showClearBillsPassword, setShowClearBillsPassword] = useState(false);
+  const [clearBillsError, setClearBillsError] = useState('');
+  const [deletingBills, setDeletingBills] = useState(false);
+
   const currency = settings?.currency_symbol || '₹';
+
+  const openDeleteInvoiceModal = (order) => {
+    setInvoiceToDelete(order);
+    setDeletePassword('');
+    setShowDeletePassword(false);
+    setDeleteError('');
+  };
+
+  const closeDeleteInvoiceModal = () => {
+    setInvoiceToDelete(null);
+    setDeletePassword('');
+    setShowDeletePassword(false);
+    setDeleteError('');
+  };
+
+  const handleConfirmDeleteInvoice = async (e) => {
+    if (e) e.preventDefault();
+    if (!invoiceToDelete) return;
+
+    if (!deletePassword.trim()) {
+      setDeleteError('Please enter your account password to verify deletion.');
+      return;
+    }
+
+    try {
+      setIsDeletingInvoice(true);
+      setDeleteError('');
+      await api.deleteOrder(invoiceToDelete.id, deletePassword.trim());
+      closeDeleteInvoiceModal();
+      await fetchData();
+      alert(`Invoice ${invoiceToDelete.invoice_no} has been deleted and stock was returned.`);
+    } catch (err) {
+      console.error('Delete invoice error:', err);
+      setDeleteError(err.message || 'Incorrect password or failed to delete invoice.');
+    } finally {
+      setIsDeletingInvoice(false);
+    }
+  };
+
+  const openClearBillsModal = () => {
+    setShowClearBillsConfirm(true);
+    setClearBillsPassword('');
+    setShowClearBillsPassword(false);
+    setClearBillsError('');
+  };
+
+  const closeClearBillsModal = () => {
+    setShowClearBillsConfirm(false);
+    setClearBillsPassword('');
+    setShowClearBillsPassword(false);
+    setClearBillsError('');
+  };
+
+  const handleConfirmClearAllBills = async (e) => {
+    if (e) e.preventDefault();
+    if (!clearBillsPassword.trim()) {
+      setClearBillsError('Please enter your account password to verify deletion.');
+      return;
+    }
+
+    try {
+      setDeletingBills(true);
+      setClearBillsError('');
+      await api.clearBillHistory(clearBillsPassword.trim());
+      closeClearBillsModal();
+      await fetchData();
+      alert('All bill history has been deleted. Product inventory remains safe.');
+    } catch (err) {
+      console.error('Clear bills error:', err);
+      setClearBillsError(err.message || 'Incorrect password or failed to delete bill history.');
+    } finally {
+      setDeletingBills(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -571,9 +666,22 @@ export default function ProfitLossView({ settings }) {
               Individual bill records with itemized revenues, cost, and net profit
             </p>
           </div>
-          <span className="text-xs font-mono text-slate-400">
-            {reportOrders.length} {reportOrders.length === 1 ? 'order' : 'orders'} found
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-slate-400">
+              {reportOrders.length} {reportOrders.length === 1 ? 'order' : 'orders'} found
+            </span>
+            {reportOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={openClearBillsModal}
+                className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                title="Delete all past bill history while preserving product inventory"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Bill History</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -587,7 +695,7 @@ export default function ProfitLossView({ settings }) {
                 <th className="py-3 px-4 text-right">Revenue</th>
                 <th className="py-3 px-4 text-right">Cost (COGS)</th>
                 <th className="py-3 px-4 text-right">Net Profit</th>
-                <th className="py-3 px-4 text-center">Receipt</th>
+                <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
@@ -622,13 +730,24 @@ export default function ProfitLossView({ settings }) {
                     +{currency}{(o.profit || 0).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-center">
-                    <button
-                      onClick={() => handleViewReceipt(o.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-[11px] font-semibold transition"
-                    >
-                      <Receipt className="w-3 h-3" />
-                      <span>View</span>
-                    </button>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => handleViewReceipt(o.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-[11px] font-semibold transition"
+                        title="View printed bill receipt"
+                      >
+                        <Receipt className="w-3 h-3" />
+                        <span>View</span>
+                      </button>
+                      <button
+                        onClick={() => openDeleteInvoiceModal(o)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-600 border border-rose-500/30 hover:border-rose-600 text-rose-300 hover:text-white text-[11px] font-semibold transition active:scale-95"
+                        title={`Delete invoice ${o.invoice_no}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -687,6 +806,213 @@ export default function ProfitLossView({ settings }) {
           settings={settings}
           onClose={() => setSelectedReceipt(null)}
         />
+      )}
+
+      {/* Individual Invoice Delete Password Verification Modal */}
+      {invoiceToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-slate-900 border border-rose-500/50 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5 text-rose-400">
+                <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/30">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white m-0">Delete Invoice</h3>
+                  <p className="text-[11px] text-slate-400 m-0">Account password required</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDeleteInvoiceModal}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Invoice details summary */}
+            <div className="p-3.5 bg-slate-800/70 border border-slate-700/70 rounded-2xl space-y-1.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Invoice Number:</span>
+                <span className="font-mono font-bold text-indigo-400">{invoiceToDelete.invoice_no}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Customer:</span>
+                <span className="font-medium text-white">{invoiceToDelete.customer_name || 'Walk-in'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Total Amount:</span>
+                <span className="font-mono font-bold text-emerald-400">{currency}{(invoiceToDelete.total_amount || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-[11px] flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5 text-emerald-400" />
+              <p className="m-0 leading-relaxed text-slate-300">
+                Sold items in this invoice will be automatically returned to your product inventory stock count.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmDeleteInvoice} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Enter Account Password to Confirm:
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={showDeletePassword ? 'text' : 'password'}
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    placeholder="Enter your account password"
+                    autoFocus
+                    required
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-800/90 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl text-white text-xs outline-none transition font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDeletePassword(!showDeletePassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition"
+                  >
+                    {showDeletePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 m-0">
+                  Enter the password set during account creation to authorize deletion.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={closeDeleteInvoiceModal}
+                  disabled={isDeletingInvoice}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDeletingInvoice || !deletePassword}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/30 disabled:opacity-50 active:scale-95"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isDeletingInvoice ? 'Verifying & Deleting...' : 'Delete Invoice'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Bill History Alone Confirmation Modal */}
+      {showClearBillsConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-slate-900 border border-rose-500/50 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5 text-rose-400">
+                <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/30">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white m-0">Delete Bill History Alone</h3>
+                  <p className="text-[11px] text-slate-400 m-0">Safe for your product inventory</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeClearBillsModal}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <p className="m-0">
+                Are you sure you want to delete <strong className="text-white">all billing and invoice history</strong>?
+              </p>
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-[11px] space-y-1">
+                <p className="font-bold m-0 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> What will NOT be deleted:
+                </p>
+                <p className="m-0 text-slate-300">
+                  Your products catalog, stock counts, categories, and store settings remain 100% untouched and safe.
+                </p>
+              </div>
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-[11px]">
+                <p className="m-0">
+                  Past bills, invoices, receipts, and revenue/profit sales totals will be cleared to zero.
+                </p>
+              </div>
+            </div>
+
+            {clearBillsError && (
+              <div className="p-3 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{clearBillsError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmClearAllBills} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Enter Account Password to Confirm:
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={showClearBillsPassword ? 'text' : 'password'}
+                    value={clearBillsPassword}
+                    onChange={(e) => setClearBillsPassword(e.target.value)}
+                    placeholder="Enter your account password"
+                    autoFocus
+                    required
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-800/90 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl text-white text-xs outline-none transition font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowClearBillsPassword(!showClearBillsPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition"
+                  >
+                    {showClearBillsPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={closeClearBillsModal}
+                  disabled={deletingBills}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deletingBills || !clearBillsPassword}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-rose-600/30 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deletingBills ? 'Deleting Bills...' : 'Yes, Delete Bill History'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

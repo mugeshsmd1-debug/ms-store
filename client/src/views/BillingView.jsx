@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, User, Phone, Tag, Check, Sparkles, AlertCircle } from 'lucide-react';
 import TiltCard from '../components/TiltCard';
+import ProductIcon from '../components/ProductIcon';
 import StoreScene3D from '../components/StoreScene3D';
 import ReceiptModal from '../components/ReceiptModal';
 import { api } from '../services/api';
@@ -232,9 +233,9 @@ export default function BillingView({ products = [], categories = [], settings, 
                 >
                   {/* Top Badges */}
                   <div className="flex items-start justify-between gap-1 mb-2">
-                    <span className="text-3xl p-1.5 bg-slate-800/80 rounded-xl border border-slate-700/60">
-                      {product.image_emoji}
-                    </span>
+                    <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center p-1 bg-slate-800/80 rounded-xl border border-slate-700/60 overflow-hidden">
+                      <ProductIcon icon={product.image_emoji} className="w-10 h-10 object-cover" textClassName="text-3xl" />
+                    </div>
 
                     {/* Stock Available Badge */}
                     <span
@@ -357,7 +358,9 @@ export default function BillingView({ products = [], categories = [], settings, 
                       {/* Top Row: Product details, Qty, Subtotal & Delete */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="text-lg">{item.image_emoji}</span>
+                          <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg overflow-hidden bg-slate-900/80 border border-slate-700/50">
+                            <ProductIcon icon={item.image_emoji} className="w-7 h-7 object-cover" textClassName="text-base" />
+                          </div>
                           <div className="truncate">
                             <p className="font-semibold text-slate-200 truncate m-0">{item.name}</p>
                             <p className="text-[11px] text-indigo-400 font-mono m-0">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Plus, PackageCheck, AlertCircle, ArrowRight } from 'lucide-react';
+import ProductIcon from './ProductIcon';
 
 export default function RestockModal({ product, isOpen, onClose, onRestock }) {
   const [mode, setMode] = useState('add'); // 'add' or 'set'
@@ -49,8 +50,10 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
       <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-800/80 border-b border-slate-700">
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl">{product.image_emoji}</span>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center p-0.5 bg-slate-800 rounded-xl border border-slate-700/60 overflow-hidden">
+              <ProductIcon icon={product.image_emoji} className="w-8 h-8 object-cover" textClassName="text-2xl" />
+            </div>
             <div>
               <h2 className="text-base font-bold text-white">Update Stock</h2>
               <p className="text-xs text-slate-400 font-mono">{product.name} ({product.sku})</p>

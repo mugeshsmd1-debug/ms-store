@@ -1,6 +1,21 @@
 # MS Store - Smart Retail POS & Inventory Management App
 
-A modern full-stack web application designed for retail shops featuring Point of Sale (POS) billing, real-time inventory and stock tracking, comprehensive Profit & Loss (P&L) analytics, and interactive **3D visual effects**.
+A modern full-stack web application designed for retail shops featuring Point of Sale (POS) billing, real-time inventory and stock tracking, comprehensive Profit & Loss (P&L) analytics, interactive **3D visual effects**, and a cloud backend powered by **Supabase Edge Functions & PostgreSQL**.
+
+---
+
+## 🚀 Migration: Render to Supabase Backend (via Supabase MCP)
+
+The backend has been migrated from a legacy Render web service (Node.js + local SQLite) to **Supabase Edge Functions + PostgreSQL**:
+
+| Metric / Aspect | Previous Render Backend | New Supabase Cloud Backend |
+| :--- | :--- | :--- |
+| **Compute / Runtime** | Render Node Web Service (Free Tier) | **Supabase Edge Functions (Deno / V8 isolate)** |
+| **Backend API URL** | `https://ms-store-backend.onrender.com` | `https://thjfjhekmqwgtypbhlar.supabase.co/functions/v1/api` |
+| **Cold Starts** | 30–50s spin-down latency & 502 HTML errors | **Instant sub-second response (~500ms global roundtrip)** |
+| **Database Engine** | Ephemeral SQLite (`store.db`) | Hosted **PostgreSQL 17** (`ap-south-1`) |
+| **Data Persistence** | Lost on container restart/redeploy | **ACID-compliant, fully persistent cloud storage** |
+| **Transactions** | File locks | Stored procedure `process_order_checkout` in PL/pgSQL |
 
 ---
 
@@ -25,6 +40,7 @@ A modern full-stack web application designed for retail shops featuring Point of
 - **Total Revenue & Sales**: Tracks gross sales and net revenue.
 - **Cost of Goods Sold (COGS)**: Automatically computes total cost of products sold based on purchase prices.
 - **Net Profit & Net Margin**: Instant calculation of net profit and margin percentage (`%`).
+- **Multi-Horizon Reporting**: Daily/Calendar view, Month-by-Month view, and 12-Month Annual Jan–Dec breakdown.
 - **Interactive Visual Charts**: Daily revenue vs daily profit trend bars with hover data tooltips.
 - **Top Profit Drivers**: Identifies top products contributing the highest net earnings.
 - **Full Invoices History**: Detailed breakdown of every bill generated, revenue, cost, profit, and printable receipt preview.
@@ -37,29 +53,33 @@ A modern full-stack web application designed for retail shops featuring Point of
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Running the Project
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18 or higher recommended)
 
-### Running the Full-Stack Application
+### Development Options
 
-From the root directory (`c:\Users\PC\Desktop\MS_STORE`):
-
+#### Option A: Run Frontend connected to Supabase Cloud Backend (Recommended)
 ```bash
-# Start both backend server (port 5000) and frontend (port 5173) concurrently:
+npm --prefix client run dev
+```
+Then open **[http://localhost:5173](http://localhost:5173)**. The frontend will communicate directly with the live Supabase Edge Function API backend (`https://thjfjhekmqwgtypbhlar.supabase.co/functions/v1/api`).
+
+#### Option B: Run Local Express Server + Client
+```bash
 npm run dev
 ```
-
-Then open your browser at:
-**[http://localhost:5173](http://localhost:5173)**
+Runs both `node server/index.js` (port 5000) and the Vite client (port 5173). The local server also connects directly to the Supabase PostgreSQL database.
 
 ---
 
 ## 🛠️ Tech Stack & Architecture
 
-- **Backend**: Node.js & Express.js
-- **Database**: SQLite (`better-sqlite3`) with WAL mode for speed and atomic ACID transactions
-- **Frontend**: React 19, Vite, Tailwind CSS v4
+- **Backend (Cloud)**: Supabase Edge Functions (`supabase/functions/api/index.ts`)
+- **Backend (Local)**: Node.js Express (`server/index.js`) connected to Supabase
+- **Database**: Supabase PostgreSQL 17 (`ap-south-1`)
+- **Frontend**: React 19, Vite 8, Tailwind CSS v4
 - **3D Engine**: Three.js (WebGL rendering, raycasting, interactive lighting)
+- **Deployment**: Netlify (`netlify.toml`)
 - **Icons & UI**: Lucide React, Canvas Confetti

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import ProductIcon from './ProductIcon';
 
 export default function Warehouse3D({ products = [], currencySymbol = '₹', onSelectProduct }) {
   const mountRef = useRef(null);
@@ -274,7 +275,9 @@ export default function Warehouse3D({ products = [], currencySymbol = '₹', onS
           }}
         >
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-lg">{hoveredProduct.image_emoji}</span>
+            <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg overflow-hidden bg-slate-800 border border-slate-700">
+              <ProductIcon icon={hoveredProduct.image_emoji} className="w-7 h-7 object-cover" textClassName="text-lg" />
+            </div>
             <div>
               <p className="font-bold text-slate-100 line-clamp-1">{hoveredProduct.name}</p>
               <p className="text-[10px] text-slate-400 font-mono">{hoveredProduct.sku}</p>

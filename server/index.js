@@ -1,7 +1,7 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const db = require('./db');
+const supabase = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -9,44 +9,97 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Helper to extract user email
+function getUserEmail(req) {
+  return (req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase();
+}
+
 // Health check and root endpoints
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', service: 'MS Store Backend', version: '1.0.0', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    service: 'MS Store Backend on Supabase',
+    version: '1.0.0',
+    provider: 'Supabase PostgreSQL',
+    time: new Date().toISOString(),
+  });
 });
 
 app.get('/api', (req, res) => {
-  res.json({ status: 'ok', service: 'MS Store API', version: '1.0.0' });
+  res.json({
+    status: 'ok',
+    service: 'MS Store API on Supabase',
+    version: '1.0.0',
+    provider: 'Supabase PostgreSQL',
+  });
 });
 
 // ---------------------------------------------
 // SETTINGS ENDPOINTS
 // ---------------------------------------------
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', async (req, res) => {
   try {
-    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    res.json(settings);
+    const email = getUserEmail(req) || 'default';
+    const { data, error } = await supabase.from('settings').select('*').eq('user_email', email).maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+
+    if (data) {
+      return res.json({ ...data, tax_percentage: parseFloat(data.tax_percentage) || 5.0 });
+    }
+
+    const defaultSettings = {
+      user_email: email,
+      shop_name: 'MS Store',
+      tagline: 'Smart Retail & Inventory Management',
+      phone: '',
+      address: '',
+      currency_symbol: '₹',
+      tax_percentage: 5.0,
+      owner_name: '',
+      owner_email: email,
+      owner_pin: '',
+    };
+
+    if (getUserEmail(req)) {
+      const { data: created } = await supabase.from('settings').insert(defaultSettings).select().single();
+      if (created) return res.json({ ...created, tax_percentage: parseFloat(created.tax_percentage) || 5.0 });
+    }
+
+    res.json(defaultSettings);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', async (req, res) => {
   try {
-    const { shop_name, tagline, phone, address, currency_symbol, tax_percentage } = req.body;
-    db.prepare(`
-      UPDATE settings
-      SET shop_name = COALESCE(?, shop_name),
-          tagline = COALESCE(?, tagline),
-          phone = COALESCE(?, phone),
-          address = COALESCE(?, address),
-          currency_symbol = COALESCE(?, currency_symbol),
-          tax_percentage = COALESCE(?, tax_percentage),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = 1
-    `).run(shop_name, tagline, phone, address, currency_symbol, tax_percentage);
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
-    const updated = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    res.json(updated);
+    const body = req.body;
+    const { data, error } = await supabase
+      .from('settings')
+      .upsert(
+        {
+          user_email: userEmail,
+          shop_name: body.shop_name,
+          tagline: body.tagline,
+          phone: body.phone,
+          address: body.address,
+          currency_symbol: body.currency_symbol || '₹',
+          tax_percentage: parseFloat(body.tax_percentage) || 0,
+          owner_name: body.owner_name,
+          owner_email: body.owner_email || userEmail,
+          owner_pin: body.owner_pin,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_email' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ ...data, tax_percentage: parseFloat(data.tax_percentage) || 5.0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -55,441 +108,746 @@ app.put('/api/settings', (req, res) => {
 // ---------------------------------------------
 // PRODUCTS ENDPOINTS
 // ---------------------------------------------
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.json([]);
+
+    let query = supabase.from('products').select('*').eq('user_email', userEmail);
     const { search, category, lowStockOnly } = req.query;
-    let query = 'SELECT * FROM products WHERE 1=1';
-    const params = [];
 
     if (search) {
-      query += ' AND (name LIKE ? OR sku LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
+      const q = search.trim();
+      query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
     }
 
     if (category && category !== 'All') {
-      query += ' AND category = ?';
-      params.push(category);
+      query = query.eq('category', category);
     }
+
+    query = query.order('name', { ascending: true });
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    let list = (data || []).map((p) => ({
+      ...p,
+      cost_price: parseFloat(p.cost_price),
+      selling_price: parseFloat(p.selling_price),
+      gst_percentage: parseFloat(p.gst_percentage),
+    }));
 
     if (lowStockOnly === 'true') {
-      query += ' AND stock_quantity <= low_stock_threshold';
+      list = list.filter((p) => p.stock_quantity <= p.low_stock_threshold);
     }
 
-    query += ' ORDER BY name ASC';
-
-    const products = db.prepare(query).all(...params);
-    res.json(products);
+    res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/products/categories', (req, res) => {
+app.get('/api/products/categories', async (req, res) => {
   try {
-    const categories = db.prepare('SELECT DISTINCT category FROM products ORDER BY category ASC').all();
-    res.json(categories.map(c => c.category));
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.json([]);
+
+    const { data, error } = await supabase.from('products').select('category').eq('user_email', userEmail);
+    if (error) throw error;
+
+    const set = new Set((data || []).map((r) => r.category).filter(Boolean));
+    res.json(Array.from(set).sort());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
   try {
-    const { name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji } = req.body;
-    if (!name || !sku || cost_price === undefined || selling_price === undefined) {
-      return res.status(400).json({ error: 'Name, SKU, cost price, and selling price are required.' });
-    }
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
-    const cleanSku = String(sku).trim().toUpperCase();
-    const existing = db.prepare('SELECT id FROM products WHERE sku = ?').get(cleanSku);
-    if (existing) {
-      return res.status(400).json({ error: `Product SKU "${cleanSku}" already exists.` });
+    const { name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji, gst_percentage } = req.body;
+    const cleanSku = String(sku || '').trim().toUpperCase();
+
+    if (!name || !cleanSku) {
+      return res.status(400).json({ error: 'Name and SKU are required.' });
     }
 
     const initialStock = parseInt(stock_quantity, 10) || 0;
     const threshold = parseInt(low_stock_threshold, 10) || 5;
-    const gstPct = req.body.gst_percentage !== undefined ? parseFloat(req.body.gst_percentage) : 5.0;
+    const gstPct = gst_percentage !== undefined ? parseFloat(gst_percentage) : 5.0;
 
-    const insert = db.prepare(`
-      INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji, gst_percentage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const { data: newProd, error } = await supabase
+      .from('products')
+      .insert({
+        user_email: userEmail,
+        name: name.trim(),
+        sku: cleanSku,
+        category: (category || 'General').trim(),
+        cost_price: parseFloat(cost_price) || 0,
+        selling_price: parseFloat(selling_price) || 0,
+        stock_quantity: initialStock,
+        low_stock_threshold: threshold,
+        unit: unit || 'pcs',
+        image_emoji: image_emoji || '📦',
+        gst_percentage: gstPct,
+      })
+      .select()
+      .single();
 
-    const result = insert.run(
-      name.trim(),
-      cleanSku,
-      category ? category.trim() : 'General',
-      parseFloat(cost_price),
-      parseFloat(selling_price),
-      initialStock,
-      threshold,
-      unit || 'pcs',
-      image_emoji || '📦',
-      gstPct
-    );
-
-    const productId = result.lastInsertRowid;
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({ error: `Product SKU "${cleanSku}" already exists.` });
+      }
+      throw error;
+    }
 
     if (initialStock > 0) {
-      db.prepare(`
-        INSERT INTO stock_logs (product_id, type, quantity_change, quantity_after, note)
-        VALUES (?, 'INITIAL', ?, ?, 'Initial inventory stock')
-      `).run(productId, initialStock, initialStock);
+      await supabase.from('stock_logs').insert({
+        user_email: userEmail,
+        product_id: newProd.id,
+        type: 'INITIAL',
+        quantity_change: initialStock,
+        quantity_after: initialStock,
+        note: 'Initial inventory stock',
+      });
     }
 
-    const newProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-    res.status(201).json(newProduct);
+    res.status(201).json({
+      ...newProd,
+      cost_price: parseFloat(newProd.cost_price),
+      selling_price: parseFloat(newProd.selling_price),
+      gst_percentage: parseFloat(newProd.gst_percentage),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji, gst_percentage } = req.body;
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
-    const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    if (!existing) {
-      return res.status(404).json({ error: 'Product not found.' });
-    }
+    const id = parseInt(req.params.id, 10);
+    const body = req.body;
 
-    const cleanSku = sku ? String(sku).trim().toUpperCase() : existing.sku;
-    if (cleanSku !== existing.sku) {
-      const duplicate = db.prepare('SELECT id FROM products WHERE sku = ? AND id != ?').get(cleanSku, id);
-      if (duplicate) {
-        return res.status(400).json({ error: `SKU "${cleanSku}" is already taken by another product.` });
+    const { data: current, error: getErr } = await supabase.from('products').select('*').eq('id', id).eq('user_email', userEmail).single();
+    if (getErr || !current) return res.status(404).json({ error: 'Product not found.' });
+
+    const cleanSku = body.sku ? String(body.sku).trim().toUpperCase() : current.sku;
+    const newStock = body.stock_quantity !== undefined ? parseInt(body.stock_quantity, 10) : current.stock_quantity;
+    const stockDiff = newStock - current.stock_quantity;
+
+    const updatePayload = { sku: cleanSku, updated_at: new Date().toISOString() };
+    if (body.name !== undefined) updatePayload.name = body.name.trim();
+    if (body.category !== undefined) updatePayload.category = body.category.trim();
+    if (body.cost_price !== undefined) updatePayload.cost_price = parseFloat(body.cost_price);
+    if (body.selling_price !== undefined) updatePayload.selling_price = parseFloat(body.selling_price);
+    if (body.stock_quantity !== undefined) updatePayload.stock_quantity = newStock;
+    if (body.low_stock_threshold !== undefined) updatePayload.low_stock_threshold = parseInt(body.low_stock_threshold, 10);
+    if (body.unit !== undefined) updatePayload.unit = body.unit;
+    if (body.image_emoji !== undefined) updatePayload.image_emoji = body.image_emoji;
+    if (body.gst_percentage !== undefined) updatePayload.gst_percentage = parseFloat(body.gst_percentage);
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('products')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      if (updateErr.code === '23505') {
+        return res.status(400).json({ error: `SKU "${cleanSku}" is already taken.` });
       }
+      throw updateErr;
     }
-
-    const newStock = stock_quantity !== undefined ? parseInt(stock_quantity, 10) : existing.stock_quantity;
-    const stockDiff = newStock - existing.stock_quantity;
-
-    db.prepare(`
-      UPDATE products
-      SET name = COALESCE(?, name),
-          sku = COALESCE(?, sku),
-          category = COALESCE(?, category),
-          cost_price = COALESCE(?, cost_price),
-          selling_price = COALESCE(?, selling_price),
-          stock_quantity = COALESCE(?, stock_quantity),
-          low_stock_threshold = COALESCE(?, low_stock_threshold),
-          unit = COALESCE(?, unit),
-          image_emoji = COALESCE(?, image_emoji),
-          gst_percentage = COALESCE(?, gst_percentage),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
-      name ? name.trim() : null,
-      cleanSku,
-      category ? category.trim() : null,
-      cost_price !== undefined ? parseFloat(cost_price) : null,
-      selling_price !== undefined ? parseFloat(selling_price) : null,
-      newStock,
-      low_stock_threshold !== undefined ? parseInt(low_stock_threshold, 10) : null,
-      unit || null,
-      image_emoji || null,
-      gst_percentage !== undefined ? parseFloat(gst_percentage) : null,
-      id
-    );
 
     if (stockDiff !== 0) {
-      db.prepare(`
-        INSERT INTO stock_logs (product_id, type, quantity_change, quantity_after, note)
-        VALUES (?, 'ADJUSTMENT', ?, ?, 'Manual stock edit')
-      `).run(id, stockDiff, newStock);
+      await supabase.from('stock_logs').insert({
+        user_email: userEmail,
+        product_id: id,
+        type: 'ADJUSTMENT',
+        quantity_change: stockDiff,
+        quantity_after: newStock,
+        note: 'Manual stock edit',
+      });
     }
 
-    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    res.json(updated);
+    res.json({
+      ...updated,
+      cost_price: parseFloat(updated.cost_price),
+      selling_price: parseFloat(updated.selling_price),
+      gst_percentage: parseFloat(updated.gst_percentage),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Quick stock adjustment (+ or - or direct restock)
-app.patch('/api/products/:id/stock', (req, res) => {
+app.patch('/api/products/:id/stock', async (req, res) => {
   try {
-    const { id } = req.params;
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+
+    const id = parseInt(req.params.id, 10);
     const { delta, newStock, note, type } = req.body;
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found.' });
-    }
+    const { data: product, error: getErr } = await supabase.from('products').select('*').eq('id', id).eq('user_email', userEmail).single();
+    if (getErr || !product) return res.status(404).json({ error: 'Product not found.' });
 
-    let updatedQuantity;
+    let updatedQty;
     let change;
 
     if (delta !== undefined) {
       change = parseInt(delta, 10);
-      updatedQuantity = product.stock_quantity + change;
+      updatedQty = product.stock_quantity + change;
     } else if (newStock !== undefined) {
-      updatedQuantity = parseInt(newStock, 10);
-      change = updatedQuantity - product.stock_quantity;
+      updatedQty = parseInt(newStock, 10);
+      change = updatedQty - product.stock_quantity;
     } else {
       return res.status(400).json({ error: 'Provide delta or newStock.' });
     }
 
-    if (updatedQuantity < 0) {
-      return res.status(400).json({ error: 'Stock quantity cannot be negative.' });
-    }
+    if (updatedQty < 0) return res.status(400).json({ error: 'Stock quantity cannot be negative.' });
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('products')
+      .update({ stock_quantity: updatedQty, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
 
     const logType = type || (change > 0 ? 'RESTOCK' : 'ADJUSTMENT');
-
-    const updateTx = db.transaction(() => {
-      db.prepare('UPDATE products SET stock_quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-        .run(updatedQuantity, id);
-
-      db.prepare(`
-        INSERT INTO stock_logs (product_id, type, quantity_change, quantity_after, note)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(id, logType, change, updatedQuantity, note || `Quick stock ${change >= 0 ? '+' + change : change}`);
+    await supabase.from('stock_logs').insert({
+      user_email: userEmail,
+      product_id: id,
+      type: logType,
+      quantity_change: change,
+      quantity_after: updatedQty,
+      note: note || `Quick stock ${change >= 0 ? '+' + change : change}`,
     });
 
-    updateTx();
-
-    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    res.json(updated);
+    res.json({
+      ...updated,
+      cost_price: parseFloat(updated.cost_price),
+      selling_price: parseFloat(updated.selling_price),
+      gst_percentage: parseFloat(updated.gst_percentage),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found.' });
-    }
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
-    db.prepare('DELETE FROM products WHERE id = ?').run(id);
-    res.json({ message: 'Product deleted successfully.', product });
+    const id = parseInt(req.params.id, 10);
+    const { data, error } = await supabase.from('products').delete().eq('id', id).eq('user_email', userEmail).select().single();
+    if (error) throw error;
+    res.json({ message: 'Product deleted successfully.', product: data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---------------------------------------------
-// BILLING / ORDERS ENDPOINTS
+// ORDERS / BILLING ENDPOINTS
 // ---------------------------------------------
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+
     const { items, customer_name, customer_phone, discount_amount = 0, tax_percentage, payment_method = 'Cash' } = req.body;
-
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Cart is empty. Add items to create a bill.' });
     }
 
-    // Settings for default tax
-    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    const { data: settings } = await supabase.from('settings').select('*').eq('user_email', userEmail).maybeSingle();
     const effectiveTaxRate = (tax_percentage !== undefined ? parseFloat(tax_percentage) : (settings?.tax_percentage || 5.0)) / 100;
 
-    // Transaction for atomic order processing & stock deduction
-    const processOrderTx = db.transaction(() => {
-      let subtotal = 0;
-      let totalCost = 0;
-      const verifiedItems = [];
+    const itemIds = items.map((i) => i.id);
+    const { data: dbProducts, error: prodErr } = await supabase
+      .from('products')
+      .select('*')
+      .in('id', itemIds)
+      .eq('user_email', userEmail);
 
-      // 1. Verify stock and calculate totals
-      for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.id);
-        if (!product) {
-          throw new Error(`Product not found: ID ${item.id}`);
-        }
+    if (prodErr) throw prodErr;
+    const productMap = new Map((dbProducts || []).map((p) => [p.id, p]));
 
-        const qty = parseInt(item.quantity, 10);
-        if (qty <= 0) {
-          throw new Error(`Invalid quantity for ${product.name}`);
-        }
+    let subtotal = 0;
+    let totalCost = 0;
+    const verifiedItems = [];
 
-        if (product.stock_quantity < qty) {
-          throw new Error(`Insufficient stock for "${product.name}". Available: ${product.stock_quantity}, Requested: ${qty}`);
-        }
+    for (const item of items) {
+      const prod = productMap.get(item.id);
+      if (!prod) return res.status(400).json({ error: `Product not found (ID: ${item.id})` });
 
-        const sellingPrice = parseFloat(product.selling_price);
-        const costPrice = parseFloat(product.cost_price);
-        const itemSubtotal = sellingPrice * qty;
-        const itemCost = costPrice * qty;
-        const itemProfit = (sellingPrice - costPrice) * qty;
-
-        // Custom GST per item
-        const itemGst = item.gst_percentage !== undefined
-          ? parseFloat(item.gst_percentage)
-          : (product.gst_percentage !== undefined ? parseFloat(product.gst_percentage) : (effectiveTaxRate * 100));
-
-        subtotal += itemSubtotal;
-        totalCost += itemCost;
-
-        verifiedItems.push({
-          product,
-          qty,
-          sellingPrice,
-          costPrice,
-          itemSubtotal,
-          itemProfit,
-          gstPercentage: isNaN(itemGst) ? 0 : itemGst
-        });
+      const qty = parseInt(item.quantity, 10);
+      if (qty <= 0) return res.status(400).json({ error: `Invalid quantity for ${prod.name}` });
+      if (prod.stock_quantity < qty) {
+        return res.status(400).json({ error: `Insufficient stock for "${prod.name}". Available: ${prod.stock_quantity}, Requested: ${qty}` });
       }
 
-      // Calculations
-      const discount = Math.min(subtotal, Math.max(0, parseFloat(discount_amount) || 0));
-      const discountRatio = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
+      const sellingPrice = parseFloat(prod.selling_price);
+      const costPrice = parseFloat(prod.cost_price);
+      const itemSubtotal = sellingPrice * qty;
+      const itemCost = costPrice * qty;
+      const itemProfit = (sellingPrice - costPrice) * qty;
 
-      let totalTaxAmount = 0;
-      for (const vItem of verifiedItems) {
-        const itemTaxable = vItem.itemSubtotal * discountRatio;
-        vItem.taxAmount = parseFloat((itemTaxable * (vItem.gstPercentage / 100)).toFixed(2));
-        totalTaxAmount += vItem.taxAmount;
+      const itemGst = item.gst_percentage !== undefined
+        ? parseFloat(item.gst_percentage)
+        : (prod.gst_percentage !== undefined ? parseFloat(prod.gst_percentage) : (effectiveTaxRate * 100));
+
+      subtotal += itemSubtotal;
+      totalCost += itemCost;
+
+      verifiedItems.push({
+        id: prod.id,
+        name: prod.name,
+        sku: prod.sku,
+        selling_price: sellingPrice,
+        cost_price: costPrice,
+        quantity: qty,
+        subtotal: itemSubtotal,
+        profit: itemProfit,
+        gst_percentage: isNaN(itemGst) ? 0 : itemGst,
+      });
+    }
+
+    const discount = Math.min(subtotal, Math.max(0, parseFloat(discount_amount) || 0));
+    const discountRatio = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
+
+    let totalTaxAmount = 0;
+    for (const vItem of verifiedItems) {
+      const itemTaxable = vItem.subtotal * discountRatio;
+      vItem.tax_amount = parseFloat((itemTaxable * (vItem.gst_percentage / 100)).toFixed(2));
+      totalTaxAmount += vItem.tax_amount;
+    }
+    totalTaxAmount = parseFloat(totalTaxAmount.toFixed(2));
+
+    const taxable = Math.max(0, subtotal - discount);
+    const totalAmount = parseFloat((taxable + totalTaxAmount).toFixed(2));
+    const netProfit = parseFloat((taxable - totalCost).toFixed(2));
+
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const { count } = await supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_email', userEmail)
+      .ilike('invoice_no', `INV-${dateStr}%`);
+
+    const nextSeq = (count || 0) + 1;
+    const invoiceNo = `INV-${dateStr}-${String(nextSeq).padStart(4, '0')}`;
+
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('process_order_checkout', {
+      p_user_email: userEmail,
+      p_customer_name: customer_name ? customer_name.trim() : 'Walk-in Customer',
+      p_customer_phone: customer_phone ? customer_phone.trim() : '',
+      p_subtotal: parseFloat(subtotal.toFixed(2)),
+      p_discount_amount: discount,
+      p_tax_amount: totalTaxAmount,
+      p_total_amount: totalAmount,
+      p_total_cost: parseFloat(totalCost.toFixed(2)),
+      p_profit: netProfit,
+      p_payment_method: payment_method || 'Cash',
+      p_invoice_no: invoiceNo,
+      p_items: verifiedItems,
+    });
+
+    if (rpcErr) throw rpcErr;
+
+    res.status(201).json({
+      orderId: rpcRes?.orderId,
+      invoiceNo,
+      invoice_no: invoiceNo,
+      customer_name: customer_name || 'Walk-in Customer',
+      customer_phone: customer_phone || '',
+      subtotal: parseFloat(subtotal.toFixed(2)),
+      discount_amount: discount,
+      tax_amount: totalTaxAmount,
+      total_amount: totalAmount,
+      total_cost: parseFloat(totalCost.toFixed(2)),
+      profit: netProfit,
+      payment_method: payment_method || 'Cash',
+      created_at: new Date().toISOString(),
+      items: verifiedItems.map((vi) => ({
+        name: vi.name,
+        product_name: vi.name,
+        sku: vi.sku,
+        quantity: vi.quantity,
+        selling_price: vi.selling_price,
+        cost_price: vi.cost_price,
+        subtotal: vi.subtotal,
+        gst_percentage: vi.gst_percentage,
+        tax_amount: vi.tax_amount,
+        profit: vi.profit,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/orders', async (req, res) => {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.json([]);
+
+    const limit = parseInt(req.query.limit || '50', 10);
+    const offset = parseInt(req.query.offset || '0', 10);
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*, order_items(count)')
+      .eq('user_email', userEmail)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json((data || []).map((o) => ({
+      ...o,
+      subtotal: parseFloat(o.subtotal),
+      discount_amount: parseFloat(o.discount_amount),
+      tax_amount: parseFloat(o.tax_amount),
+      total_amount: parseFloat(o.total_amount),
+      total_cost: parseFloat(o.total_cost),
+      profit: parseFloat(o.profit),
+      total_items: o.order_items?.[0]?.count || 1,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/orders/:id', async (req, res) => {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+
+    const idOrInv = req.params.id;
+    let query = supabase.from('orders').select('*').eq('user_email', userEmail);
+    if (!isNaN(Number(idOrInv)) && !idOrInv.startsWith('INV-')) {
+      query = query.eq('id', parseInt(idOrInv, 10));
+    } else {
+      query = query.eq('invoice_no', idOrInv);
+    }
+
+    const { data: order, error } = await query.single();
+    if (error || !order) return res.status(404).json({ error: 'Order not found.' });
+
+    const { data: items, error: itemsErr } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', order.id);
+
+    if (itemsErr) throw itemsErr;
+
+    res.json({
+      ...order,
+      subtotal: parseFloat(order.subtotal),
+      discount_amount: parseFloat(order.discount_amount),
+      tax_amount: parseFloat(order.tax_amount),
+      total_amount: parseFloat(order.total_amount),
+      total_cost: parseFloat(order.total_cost),
+      profit: parseFloat(order.profit),
+      items: (items || []).map((i) => ({
+        ...i,
+        name: i.product_name,
+        cost_price: parseFloat(i.cost_price),
+        selling_price: parseFloat(i.selling_price),
+        subtotal: parseFloat(i.subtotal),
+        gst_percentage: parseFloat(i.gst_percentage),
+        tax_amount: parseFloat(i.tax_amount),
+        profit: parseFloat(i.profit),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete all bill history alone
+// Delete all bill history alone
+app.delete(['/api/orders', '/api/orders/clear'], async (req, res) => {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+
+    const password = req.headers['x-auth-password'] || req.body?.password || req.query?.password || '';
+    if (!password) {
+      return res.status(401).json({ error: 'Account password is required to delete bill history.' });
+    }
+
+    const { data: userRec, error: userErr } = await supabase.from('users').select('password').eq('email', userEmail).maybeSingle();
+    if (userErr || !userRec) return res.status(404).json({ error: 'User account not found.' });
+    if (userRec.password !== password.trim()) {
+      return res.status(403).json({ error: 'Incorrect account password. Bill history was not deleted.' });
+    }
+
+    const { error: delErr } = await supabase.from('orders').delete().eq('user_email', userEmail);
+    if (delErr) throw delErr;
+    await supabase.from('stock_logs').delete().eq('user_email', userEmail).eq('type', 'SALE');
+    res.json({ success: true, message: 'All bill history and sales transactions cleared successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete single bill / order with password verification
+app.delete('/api/orders/:id', async (req, res) => {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+    const idOrInv = req.params.id;
+
+    const password = req.headers['x-auth-password'] || req.body?.password || req.query?.password || '';
+    if (!password) {
+      return res.status(401).json({ error: 'Account password is required to delete this invoice.' });
+    }
+
+    const { data: userRec, error: userErr } = await supabase.from('users').select('password').eq('email', userEmail).maybeSingle();
+    if (userErr || !userRec) return res.status(404).json({ error: 'User account not found.' });
+    if (userRec.password !== password.trim()) {
+      return res.status(403).json({ error: 'Incorrect account password. Invoice was not deleted.' });
+    }
+
+    let query = supabase.from('orders').select('*').eq('user_email', userEmail);
+    if (!isNaN(Number(idOrInv)) && !idOrInv.startsWith('INV-')) {
+      query = query.eq('id', parseInt(idOrInv, 10));
+    } else {
+      query = query.eq('invoice_no', idOrInv);
+    }
+    const { data: orderToDel } = await query.maybeSingle();
+    if (!orderToDel) return res.status(404).json({ error: `Invoice ${idOrInv} not found.` });
+
+    // Restore inventory stock
+    const { data: orderItems } = await supabase.from('order_items').select('*').eq('order_id', orderToDel.id);
+    for (const it of orderItems || []) {
+      if (it.product_id && it.quantity > 0) {
+        const { data: p } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).maybeSingle();
+        if (p) {
+          const restored = p.stock_quantity + it.quantity;
+          await supabase.from('products').update({ stock_quantity: restored }).eq('id', it.product_id);
+          await supabase.from('stock_logs').insert({
+            user_email: userEmail,
+            product_id: it.product_id,
+            type: 'RESTOCK',
+            quantity_change: it.quantity,
+            quantity_after: restored,
+            note: `Restored stock from deleted invoice ${orderToDel.invoice_no}`
+          });
+        }
       }
-      totalTaxAmount = parseFloat(totalTaxAmount.toFixed(2));
+    }
 
-      const taxable = Math.max(0, subtotal - discount);
-      const totalAmount = parseFloat((taxable + totalTaxAmount).toFixed(2));
-      const netProfit = parseFloat((taxable - totalCost).toFixed(2));
+    const { error: delErr } = await supabase.from('orders').delete().eq('id', orderToDel.id);
+    if (delErr) throw delErr;
 
-      // Generate invoice number e.g. INV-20260930-1042
-      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const countToday = db.prepare(`SELECT COUNT(*) as count FROM orders WHERE invoice_no LIKE ?`).get(`INV-${dateStr}%`).count;
-      const invoiceNo = `INV-${dateStr}-${String(countToday + 1).padStart(4, '0')}`;
+    await supabase.from('stock_logs').delete().eq('user_email', userEmail).ilike('note', `%${orderToDel.invoice_no}%`);
+    res.json({ success: true, message: `Invoice ${orderToDel.invoice_no} deleted successfully and inventory stock restored.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-      // Insert Order
-      const insertOrder = db.prepare(`
-        INSERT INTO orders (invoice_no, customer_name, customer_phone, subtotal, discount_amount, tax_amount, total_amount, total_cost, profit, payment_method, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Completed')
-      `);
+// ---------------------------------------------
+// PROFIT & LOSS (PnL) ANALYTICS ENDPOINT
+// ---------------------------------------------
+app.get('/api/analytics/pnl', async (req, res) => {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) {
+      return res.json({
+        title: 'All Time Financial Summary',
+        summary: { total_orders: 0, total_revenue: 0, gross_sales: 0, total_discounts: 0, total_tax: 0, total_cost: 0, net_profit: 0, profit_margin: 0, is_profit: true },
+        dailyTrend: [],
+        annualMonthlyBreakdown: [],
+        topProfitable: [],
+        orders: [],
+        inventoryStats: { total_product_types: 0, total_items_in_stock: 0, inventory_cost_value: 0, inventory_retail_value: 0, potential_profit: 0, low_stock_count: 0, out_of_stock_count: 0 },
+      });
+    }
 
-      const orderResult = insertOrder.run(
-        invoiceNo,
-        customer_name ? customer_name.trim() : 'Walk-in Customer',
-        customer_phone ? customer_phone.trim() : '',
-        parseFloat(subtotal.toFixed(2)),
-        discount,
-        totalTaxAmount,
-        totalAmount,
-        parseFloat(totalCost.toFixed(2)),
-        netProfit,
-        payment_method
-      );
+    const { mode = 'all', range = 'all', date: selectedDate, month: selectedMonth, year: selectedYear } = req.query;
+    const effectiveMode = mode !== 'all' ? mode : range;
 
-      const orderId = orderResult.lastInsertRowid;
+    const { data: allOrders, error: orderErr } = await supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('user_email', userEmail)
+      .order('created_at', { ascending: false });
 
-      // Insert Order Items and Deduct Stock
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, sku, cost_price, selling_price, quantity, subtotal, gst_percentage, tax_amount, profit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+    if (orderErr) throw orderErr;
 
-      const updateStock = db.prepare(`
-        UPDATE products
-        SET stock_quantity = stock_quantity - ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `);
+    const { data: allProducts, error: prodErr } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_email', userEmail);
 
-      const insertStockLog = db.prepare(`
-        INSERT INTO stock_logs (product_id, type, quantity_change, quantity_after, note)
-        VALUES (?, 'SALE', ?, ?, ?)
-      `);
+    if (prodErr) throw prodErr;
 
-      for (const vItem of verifiedItems) {
-        insertItem.run(
-          orderId,
-          vItem.product.id,
-          vItem.product.name,
-          vItem.product.sku,
-          vItem.costPrice,
-          vItem.sellingPrice,
-          vItem.qty,
-          parseFloat(vItem.itemSubtotal.toFixed(2)),
-          vItem.gstPercentage,
-          vItem.taxAmount,
-          parseFloat(vItem.itemProfit.toFixed(2))
-        );
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
 
-        updateStock.run(vItem.qty, vItem.product.id);
+    let filteredOrders = allOrders || [];
+    let reportTitle = 'All Time Financial Summary';
 
-        const newStock = vItem.product.stock_quantity - vItem.qty;
-        insertStockLog.run(
-          vItem.product.id,
-          -vItem.qty,
-          newStock,
-          `Sale in ${invoiceNo}`
-        );
+    if (effectiveMode === 'calendar' && selectedDate) {
+      filteredOrders = filteredOrders.filter((o) => o.created_at.slice(0, 10) === selectedDate);
+      reportTitle = `Daily Report for ${selectedDate}`;
+    } else if (effectiveMode === 'month' && selectedMonth) {
+      filteredOrders = filteredOrders.filter((o) => o.created_at.slice(0, 7) === selectedMonth);
+      reportTitle = `Monthly Report for ${selectedMonth}`;
+    } else if (effectiveMode === 'year' && selectedYear) {
+      filteredOrders = filteredOrders.filter((o) => o.created_at.slice(0, 4) === String(selectedYear));
+      reportTitle = `Annual Report for ${selectedYear}`;
+    } else if (effectiveMode === 'today') {
+      filteredOrders = filteredOrders.filter((o) => o.created_at.slice(0, 10) === todayStr);
+      reportTitle = "Today's Daily Report";
+    } else if (effectiveMode === 'week') {
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+      filteredOrders = filteredOrders.filter((o) => new Date(o.created_at) >= sevenDaysAgo);
+      reportTitle = 'Last 7 Days Report';
+    }
+
+    const totalOrders = filteredOrders.length;
+    const totalRevenue = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+    const grossSales = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.subtotal) || 0), 0);
+    const totalDiscounts = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.discount_amount) || 0), 0);
+    const totalTax = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.tax_amount) || 0), 0);
+    const totalCost = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.total_cost) || 0), 0);
+    const netProfit = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.profit) || 0), 0);
+    const profitMargin = totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0;
+
+    const dailyMap = {};
+    for (const o of filteredOrders) {
+      const dKey = o.created_at.slice(0, 10);
+      if (!dailyMap[dKey]) {
+        dailyMap[dKey] = { date: dKey, order_count: 0, daily_revenue: 0, daily_cost: 0, daily_profit: 0 };
       }
+      dailyMap[dKey].order_count += 1;
+      dailyMap[dKey].daily_revenue += parseFloat(o.total_amount) || 0;
+      dailyMap[dKey].daily_cost += parseFloat(o.total_cost) || 0;
+      dailyMap[dKey].daily_profit += parseFloat(o.profit) || 0;
+    }
+
+    const dailyTrend = Object.values(dailyMap)
+      .map((d) => ({
+        ...d,
+        daily_revenue: parseFloat(d.daily_revenue.toFixed(2)),
+        daily_cost: parseFloat(d.daily_cost.toFixed(2)),
+        daily_profit: parseFloat(d.daily_profit.toFixed(2)),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const targetYear = selectedYear || now.getFullYear();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const annualMonthlyBreakdown = monthNames.map((mName, mIdx) => {
+      const monthPrefix = `${targetYear}-${String(mIdx + 1).padStart(2, '0')}`;
+      const mOrders = (allOrders || []).filter((o) => o.created_at.slice(0, 7) === monthPrefix);
+      const mRev = mOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
+      const mCost = mOrders.reduce((s, o) => s + (parseFloat(o.total_cost) || 0), 0);
+      const mProfit = mOrders.reduce((s, o) => s + (parseFloat(o.profit) || 0), 0);
+      const mMargin = mRev > 0 ? parseFloat(((mProfit / mRev) * 100).toFixed(1)) : 0;
 
       return {
-        orderId,
-        invoiceNo,
-        customer_name: customer_name || 'Walk-in Customer',
-        customer_phone: customer_phone || '',
-        subtotal: parseFloat(subtotal.toFixed(2)),
-        discount_amount: discount,
-        tax_amount: totalTaxAmount,
-        total_amount: totalAmount,
-        total_cost: parseFloat(totalCost.toFixed(2)),
-        profit: netProfit,
-        payment_method,
-        created_at: new Date().toISOString(),
-        items: verifiedItems.map(vi => ({
-          name: vi.product.name,
-          product_name: vi.product.name,
-          sku: vi.product.sku,
-          quantity: vi.qty,
-          selling_price: vi.sellingPrice,
-          subtotal: vi.itemSubtotal,
-          gst_percentage: vi.gstPercentage,
-          tax_amount: vi.taxAmount
-        }))
+        month: mName,
+        monthKey: monthPrefix,
+        orders_count: mOrders.length,
+        revenue: parseFloat(mRev.toFixed(2)),
+        cost: parseFloat(mCost.toFixed(2)),
+        profit: parseFloat(mProfit.toFixed(2)),
+        margin: mMargin,
       };
     });
 
-    const receipt = processOrderTx();
-    res.status(201).json(receipt);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get('/api/orders', (req, res) => {
-  try {
-    const { limit = 50, offset = 0 } = req.query;
-    const orders = db.prepare(`
-      SELECT o.*, 
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as total_items
-      FROM orders o
-      ORDER BY o.created_at DESC
-      LIMIT ? OFFSET ?
-    `).all(parseInt(limit, 10), parseInt(offset, 10));
-
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/orders/:id', (req, res) => {
-  try {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR invoice_no = ?').get(req.params.id, req.params.id);
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found.' });
+    const itemMap = {};
+    for (const o of filteredOrders) {
+      for (const item of o.order_items || []) {
+        const key = item.sku || item.product_name;
+        if (!itemMap[key]) {
+          itemMap[key] = {
+            product_name: item.product_name,
+            sku: item.sku,
+            units_sold: 0,
+            total_sales: 0,
+            total_profit: 0,
+          };
+        }
+        itemMap[key].units_sold += item.quantity || 1;
+        itemMap[key].total_sales += parseFloat(item.subtotal) || 0;
+        itemMap[key].total_profit += parseFloat(item.profit) || 0;
+      }
     }
 
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-    res.json({ ...order, items });
+    const topProfitable = Object.values(itemMap)
+      .map((i) => ({
+        ...i,
+        total_sales: parseFloat(i.total_sales.toFixed(2)),
+        total_profit: parseFloat(i.total_profit.toFixed(2)),
+      }))
+      .sort((a, b) => b.total_profit - a.total_profit)
+      .slice(0, 8);
+
+    const prods = allProducts || [];
+    const totalStock = prods.reduce((sum, p) => sum + (p.stock_quantity || 0), 0);
+    const costVal = prods.reduce((sum, p) => sum + ((parseFloat(p.cost_price) || 0) * (p.stock_quantity || 0)), 0);
+    const retailVal = prods.reduce((sum, p) => sum + ((parseFloat(p.selling_price) || 0) * (p.stock_quantity || 0)), 0);
+
+    res.json({
+      title: reportTitle,
+      summary: {
+        total_orders: totalOrders,
+        total_revenue: parseFloat(totalRevenue.toFixed(2)),
+        gross_sales: parseFloat(grossSales.toFixed(2)),
+        total_discounts: parseFloat(totalDiscounts.toFixed(2)),
+        total_tax: parseFloat(totalTax.toFixed(2)),
+        total_cost: parseFloat(totalCost.toFixed(2)),
+        net_profit: parseFloat(netProfit.toFixed(2)),
+        profit_margin: profitMargin,
+        is_profit: netProfit >= 0,
+      },
+      dailyTrend,
+      annualMonthlyBreakdown,
+      topProfitable,
+      orders: filteredOrders.map((o) => ({
+        ...o,
+        subtotal: parseFloat(o.subtotal),
+        discount_amount: parseFloat(o.discount_amount),
+        tax_amount: parseFloat(o.tax_amount),
+        total_amount: parseFloat(o.total_amount),
+        total_cost: parseFloat(o.total_cost),
+        profit: parseFloat(o.profit),
+      })),
+      inventoryStats: {
+        total_product_types: prods.length,
+        total_items_in_stock: totalStock,
+        inventory_cost_value: parseFloat(costVal.toFixed(2)),
+        inventory_retail_value: parseFloat(retailVal.toFixed(2)),
+        potential_profit: parseFloat((retailVal - costVal).toFixed(2)),
+        low_stock_count: prods.filter((p) => p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0).length,
+        out_of_stock_count: prods.filter((p) => p.stock_quantity === 0).length,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---------------------------------------------
-// PROFIT & LOSS (P&L) ANALYTICS ENDPOINTS
+// AUTH & USERS
 // ---------------------------------------------
-// ---------------------------------------------
-// STORE OWNER AUTHENTICATION & MULTI-USER REGISTRY
-// ---------------------------------------------
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password, name, shop_name, phone } = req.body;
     const cleanEmail = (email || '').trim().toLowerCase();
@@ -498,76 +856,87 @@ app.post('/api/auth/signup', (req, res) => {
     const cleanShop = (shop_name || 'MS Store').trim();
     const cleanPhone = (phone || '').trim();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return res.status(400).json({ error: 'Valid email / Gmail address is required.' });
-    }
-    if (!cleanPassword || cleanPassword.length < 4) {
-      return res.status(400).json({ error: 'Password must be at least 4 characters.' });
-    }
-    if (!cleanName) {
-      return res.status(400).json({ error: 'Full name is required.' });
+    if (!cleanEmail || !cleanEmail.includes('@')) return res.status(400).json({ error: 'Valid email is required.' });
+    if (!cleanPassword || cleanPassword.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+    if (!cleanName) return res.status(400).json({ error: 'Full name is required.' });
+
+    const { data: existing } = await supabase.from('users').select('id').eq('email', cleanEmail).maybeSingle();
+    if (existing) return res.status(400).json({ error: `An account with email "${cleanEmail}" already exists. Please Log In.` });
+
+    const { data: newUser, error: insertErr } = await supabase
+      .from('users')
+      .insert({
+        email: cleanEmail,
+        password: cleanPassword,
+        name: cleanName,
+        shop_name: cleanShop,
+        phone: cleanPhone,
+      })
+      .select()
+      .single();
+
+    if (insertErr) throw insertErr;
+
+    const { data: existingSettings } = await supabase.from('settings').select('id').eq('user_email', cleanEmail).maybeSingle();
+    if (!existingSettings) {
+      await supabase.from('settings').insert({
+        user_email: cleanEmail,
+        shop_name: cleanShop,
+        owner_name: cleanName,
+        owner_email: cleanEmail,
+        phone: cleanPhone,
+        currency_symbol: '₹',
+        tax_percentage: 5.0,
+      });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
-    if (existing) {
-      return res.status(400).json({ error: `An account with email "${cleanEmail}" already exists. Please Log In.` });
-    }
-
-    const result = db.prepare(`
-      INSERT INTO users (email, password, name, shop_name, phone)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(cleanEmail, cleanPassword, cleanName, cleanShop, cleanPhone);
-
-    const userSession = {
-      id: result.lastInsertRowid,
-      email: cleanEmail,
-      name: cleanName,
-      shop_name: cleanShop,
-      phone: cleanPhone,
-    };
-
-    res.status(201).json({ user: userSession });
+    res.status(201).json({
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        shop_name: newUser.shop_name,
+        phone: newUser.phone,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
 
-    if (!cleanEmail || !cleanPassword) {
-      return res.status(400).json({ error: 'Please enter both email and password.' });
-    }
+    if (!cleanEmail || !cleanPassword) return res.status(400).json({ error: 'Please enter both email and password.' });
 
-    const user = db.prepare('SELECT id, email, password, name, shop_name, phone FROM users WHERE email = ?').get(cleanEmail);
+    const { data: user, error } = await supabase.from('users').select('*').eq('email', cleanEmail).maybeSingle();
+    if (error) throw error;
     if (!user || user.password !== cleanPassword) {
       return res.status(401).json({ error: 'Invalid email or password. Please verify and try again.' });
     }
 
-    const userSession = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      shop_name: user.shop_name,
-      phone: user.phone,
-    };
-
-    res.json({ user: userSession });
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        shop_name: user.shop_name,
+        phone: user.phone,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
   try {
-    const userEmail = (req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase();
-    if (!userEmail) {
-      return res.json({ user: null });
-    }
-    const user = db.prepare('SELECT id, email, name, shop_name, phone FROM users WHERE email = ?').get(userEmail);
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.json({ user: null });
+    const { data: user } = await supabase.from('users').select('id, email, name, shop_name, phone').eq('email', userEmail).maybeSingle();
     res.json({ user: user || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -578,236 +947,38 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/auth/profile', (req, res) => {
+app.get('/api/auth/profile', async (req, res) => {
   try {
-    const settings = db.prepare('SELECT owner_name, owner_email, owner_pin, phone, shop_name FROM settings WHERE id = 1').get() || {};
+    const userEmail = getUserEmail(req);
+    const { data: settings } = await supabase.from('settings').select('*').eq('user_email', userEmail || 'default').maybeSingle();
     res.json({
-      owner_name: settings.owner_name || '',
-      owner_email: settings.owner_email || '',
-      owner_pin: settings.owner_pin || '',
-      owner_phone: settings.phone || '',
-      shop_name: settings.shop_name || 'MS Store',
-      is_configured: Boolean(settings.owner_email && settings.owner_pin),
+      owner_name: settings?.owner_name || '',
+      owner_email: settings?.owner_email || '',
+      owner_pin: settings?.owner_pin || '',
+      owner_phone: settings?.phone || '',
+      shop_name: settings?.shop_name || 'MS Store',
+      is_configured: Boolean(settings?.owner_email && settings?.owner_pin),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/auth/profile', (req, res) => {
+app.post('/api/system/reset', async (req, res) => {
   try {
-    const { owner_name, owner_email, owner_pin, owner_phone, shop_name } = req.body;
-    db.prepare(`
-      UPDATE settings 
-      SET owner_name = COALESCE(?, owner_name),
-          owner_email = COALESCE(?, owner_email),
-          owner_pin = COALESCE(?, owner_pin),
-          phone = COALESCE(?, phone),
-          shop_name = COALESCE(?, shop_name),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = 1
-    `).run(owner_name, owner_email, owner_pin, owner_phone, shop_name);
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
 
-    res.json({
-      success: true,
-      owner_name,
-      owner_email,
-      owner_pin,
-      owner_phone,
-      shop_name,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// Wipe all store data to start fresh (Zero dummy data)
-app.post('/api/system/reset', (req, res) => {
-  try {
-    if (typeof db.clearAllStoreData === 'function') {
-      db.clearAllStoreData();
-    } else {
-      db.exec('DELETE FROM order_items; DELETE FROM orders; DELETE FROM stock_logs; DELETE FROM products;');
-    }
+    await supabase.from('orders').delete().eq('user_email', userEmail);
+    await supabase.from('stock_logs').delete().eq('user_email', userEmail);
+    await supabase.from('products').delete().eq('user_email', userEmail);
     res.json({ success: true, message: 'All store inventory and sales data wiped clean.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------------------------------------------
-// PROFIT & LOSS (P&L) ANALYTICS ENDPOINTS
-// Multi-horizon: Calendar Date, Monthly, 1-Year Annual, Today, Week, All
-// ---------------------------------------------
-app.get('/api/analytics/pnl', (req, res) => {
-  try {
-    const { range = 'all', mode = 'all', date, month, year } = req.query;
-
-    let dateFilter = '';
-    let reportTitle = 'All Time Financial Summary';
-    const params = [];
-
-    const effectiveMode = mode !== 'all' ? mode : range;
-
-    if (effectiveMode === 'calendar' && date) {
-      dateFilter = `WHERE date(created_at, 'localtime') = ?`;
-      params.push(date);
-      reportTitle = `Daily Report for ${date}`;
-    } else if (effectiveMode === 'month' && month) {
-      dateFilter = `WHERE strftime('%Y-%m', created_at, 'localtime') = ?`;
-      params.push(month);
-      reportTitle = `Monthly Report for ${month}`;
-    } else if (effectiveMode === 'year' && year) {
-      dateFilter = `WHERE strftime('%Y', created_at, 'localtime') = ?`;
-      params.push(String(year));
-      reportTitle = `Annual Report for ${year}`;
-    } else if (effectiveMode === 'today') {
-      dateFilter = `WHERE date(created_at, 'localtime') = date('now', 'localtime')`;
-      reportTitle = `Today's Daily Report`;
-    } else if (effectiveMode === 'week') {
-      dateFilter = `WHERE date(created_at, 'localtime') >= date('now', '-7 days', 'localtime')`;
-      reportTitle = `Last 7 Days Report`;
-    } else if (effectiveMode === 'month') {
-      dateFilter = `WHERE date(created_at, 'localtime') >= date('now', '-30 days', 'localtime')`;
-      reportTitle = `Last 30 Days Report`;
-    }
-
-    // Overall Revenue, Cost, Profit from completed orders in range
-    const summary = db.prepare(`
-      SELECT 
-        COUNT(*) as total_orders,
-        COALESCE(SUM(total_amount), 0) as total_revenue,
-        COALESCE(SUM(subtotal), 0) as gross_sales,
-        COALESCE(SUM(discount_amount), 0) as total_discounts,
-        COALESCE(SUM(tax_amount), 0) as total_tax,
-        COALESCE(SUM(total_cost), 0) as total_cost,
-        COALESCE(SUM(profit), 0) as net_profit
-      FROM orders
-      ${dateFilter}
-    `).get(...params);
-
-    const revenue = summary.total_revenue;
-    const profit = summary.net_profit;
-    const margin = revenue > 0 ? parseFloat(((profit / revenue) * 100).toFixed(1)) : 0;
-
-    // Daily Sales & Profit Trend for chart
-    let trendSql = `
-      SELECT 
-        date(created_at, 'localtime') as date,
-        COUNT(*) as order_count,
-        ROUND(SUM(total_amount), 2) as daily_revenue,
-        ROUND(SUM(total_cost), 2) as daily_cost,
-        ROUND(SUM(profit), 2) as daily_profit
-      FROM orders
-      ${dateFilter}
-      GROUP BY date(created_at, 'localtime')
-      ORDER BY date ASC
-    `;
-    const dailyTrend = db.prepare(trendSql).all(...params);
-
-    // Filtered orders list for detailed inspection in calendar/daily view
-    const filteredOrders = db.prepare(`
-      SELECT * FROM orders
-      ${dateFilter}
-      ORDER BY created_at DESC
-      LIMIT 100
-    `).all(...params);
-
-    // 1-Year Monthly Breakdown (Jan - Dec)
-    const targetYear = String(year || new Date().getFullYear());
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const annualMonthlyBreakdown = monthNames.map((mName, idx) => {
-      const monthPrefix = `${targetYear}-${String(idx + 1).padStart(2, '0')}`;
-      const mRow = db.prepare(`
-        SELECT 
-          COUNT(*) as orders_count,
-          COALESCE(SUM(total_amount), 0) as revenue,
-          COALESCE(SUM(total_cost), 0) as cost,
-          COALESCE(SUM(profit), 0) as profit
-        FROM orders
-        WHERE strftime('%Y-%m', created_at, 'localtime') = ?
-      `).get(monthPrefix);
-
-      const mRev = mRow.revenue;
-      const mProfit = mRow.profit;
-      const mMargin = mRev > 0 ? parseFloat(((mProfit / mRev) * 100).toFixed(1)) : 0;
-
-      return {
-        month: mName,
-        monthKey: monthPrefix,
-        orders_count: mRow.orders_count,
-        revenue: parseFloat(mRev.toFixed(2)),
-        cost: parseFloat(mRow.cost.toFixed(2)),
-        profit: parseFloat(mProfit.toFixed(2)),
-        margin: mMargin,
-      };
-    });
-
-    // Top Profit Contribution Products
-    let topFilter = dateFilter.length > 0 ? dateFilter.replace('WHERE', 'WHERE o.') : '';
-    const topProfitable = db.prepare(`
-      SELECT 
-        oi.product_name,
-        oi.sku,
-        SUM(oi.quantity) as units_sold,
-        ROUND(SUM(oi.subtotal), 2) as total_sales,
-        ROUND(SUM(oi.profit), 2) as total_profit
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
-      ${topFilter}
-      GROUP BY oi.sku, oi.product_name
-      ORDER BY total_profit DESC
-      LIMIT 8
-    `).all(...params);
-
-    // Inventory Valuation & Stock Health (Current snapshot)
-    const inventoryStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_product_types,
-        COALESCE(SUM(stock_quantity), 0) as total_items_in_stock,
-        COALESCE(SUM(cost_price * stock_quantity), 0) as inventory_cost_value,
-        COALESCE(SUM(selling_price * stock_quantity), 0) as inventory_retail_value,
-        COALESCE(SUM((selling_price - cost_price) * stock_quantity), 0) as potential_profit,
-        (SELECT COUNT(*) FROM products WHERE stock_quantity <= low_stock_threshold AND stock_quantity > 0) as low_stock_count,
-        (SELECT COUNT(*) FROM products WHERE stock_quantity = 0) as out_of_stock_count
-      FROM products
-    `).get();
-
-    res.json({
-      title: reportTitle,
-      summary: {
-        total_orders: summary.total_orders,
-        total_revenue: parseFloat(summary.total_revenue.toFixed(2)),
-        gross_sales: parseFloat(summary.gross_sales.toFixed(2)),
-        total_discounts: parseFloat(summary.total_discounts.toFixed(2)),
-        total_tax: parseFloat(summary.total_tax.toFixed(2)),
-        total_cost: parseFloat(summary.total_cost.toFixed(2)),
-        net_profit: parseFloat(summary.net_profit.toFixed(2)),
-        profit_margin: margin,
-        is_profit: summary.net_profit >= 0
-      },
-      dailyTrend,
-      annualMonthlyBreakdown,
-      topProfitable,
-      orders: filteredOrders,
-      inventoryStats: {
-        total_product_types: inventoryStats.total_product_types,
-        total_items_in_stock: inventoryStats.total_items_in_stock,
-        inventory_cost_value: parseFloat(inventoryStats.inventory_cost_value.toFixed(2)),
-        inventory_retail_value: parseFloat(inventoryStats.inventory_retail_value.toFixed(2)),
-        potential_profit: parseFloat(inventoryStats.potential_profit.toFixed(2)),
-        low_stock_count: inventoryStats.low_stock_count,
-        out_of_stock_count: inventoryStats.out_of_stock_count
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`MS Store API Server running on port ${PORT} (0.0.0.0)`);
+  console.log(`MS Store API Server running on port ${PORT} (0.0.0.0) with Supabase Cloud DB`);
 });

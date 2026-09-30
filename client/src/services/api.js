@@ -1,13 +1,12 @@
 const SESSION_KEY = 'ms_store_active_user';
 const CUSTOM_API_KEY = 'ms_store_backend_url';
 
+export const DEFAULT_SUPABASE_BACKEND = 'https://thjfjhekmqwgtypbhlar.supabase.co/functions/v1/api';
+
 export function normalizeApiUrl(raw) {
   if (!raw) return '';
   let url = raw.trim();
   url = url.replace(/\/+$/, '');
-  if (!url.endsWith('/api') && (url.startsWith('http://') || url.startsWith('https://'))) {
-    url = `${url}/api`;
-  }
   return url;
 }
 
@@ -22,7 +21,7 @@ export function getEffectiveApiBase() {
       return normalizeApiUrl(custom);
     }
   } catch {}
-  return '/api';
+  return DEFAULT_SUPABASE_BACKEND;
 }
 
 export function setCustomApiUrl(url) {
@@ -73,27 +72,14 @@ async function request(path, options = {}) {
   };
 
   const apiBase = getEffectiveApiBase();
-  const url = `${apiBase}${path}`;
+  const url = `${apiBase}${path.startsWith('/') ? path : '/' + path}`;
 
   try {
     const res = await fetch(url, { ...options, headers });
     const contentType = res.headers.get('content-type') || '';
 
     if (!contentType.includes('application/json')) {
-      const isHtml = contentType.includes('text/html');
-      if (apiBase === '/api' && typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-        throw new Error(
-          `Cloud backend URL not connected. Please enter your Render backend URL below, or set VITE_API_URL in Netlify.`
-        );
-      }
-      if (isHtml) {
-        throw new Error(
-          `Backend server returned HTML (Status: ${res.status}). If Render just deployed or went to sleep, please wait 30 seconds for it to wake up and try again.`
-        );
-      }
-      throw new Error(
-        `Backend server returned invalid response format (${contentType}).`
-      );
+      throw new Error(`Supabase backend returned invalid response format (${contentType}, Status: ${res.status}).`);
     }
 
     const data = await res.json();
@@ -103,9 +89,7 @@ async function request(path, options = {}) {
     return data;
   } catch (err) {
     if (err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-      throw new Error(
-        `Cannot reach backend at ${apiBase}. If using Render free tier, it may be waking up (takes ~30-50s). Please check your internet or retry in a moment.`
-      );
+      throw new Error(`Cannot reach Supabase backend at ${apiBase}. Please check your internet connection.`);
     }
     throw err;
   }
@@ -220,6 +204,28 @@ export const api = {
     return request(`/orders/${id}`);
   },
 
+  // Delete all bill history alone (keeps products & catalog intact, verified by password)
+  async clearBillHistory(password) {
+    return request('/orders/clear', {
+      method: 'DELETE',
+      headers: {
+        'x-auth-password': password || '',
+      },
+      body: JSON.stringify({ password: password || '' }),
+    });
+  },
+
+  // Delete single bill / order (verified by account password)
+  async deleteOrder(id, password) {
+    return request(`/orders/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'x-auth-password': password || '',
+      },
+      body: JSON.stringify({ password: password || '' }),
+    });
+  },
+
   // Analytics & PnL
   async getPnL(params = 'all') {
     let queryString = '';
@@ -238,7 +244,7 @@ export const api = {
     return request(`/analytics/pnl${queryString ? '?' + queryString : ''}`);
   },
 
-  // Factory Reset (Zero Dummy Data)
+  // Factory Reset
   async clearAllData() {
     return request('/system/reset', { method: 'POST' });
   },
@@ -256,13 +262,12 @@ export const api = {
   async testBackendConnection(testUrl) {
     const base = testUrl ? normalizeApiUrl(testUrl) : getEffectiveApiBase();
     try {
-      const res = await fetch(`${base}/api`, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(`${base}/`, { signal: AbortSignal.timeout(6000) });
       const data = await res.json();
       return { ok: true, data, url: base };
     } catch (e1) {
       try {
-        const root = base.replace(/\/api$/, '');
-        const res2 = await fetch(`${root}/`, { signal: AbortSignal.timeout(6000) });
+        const res2 = await fetch(base, { signal: AbortSignal.timeout(6000) });
         const data2 = await res2.json();
         return { ok: true, data: data2, url: base };
       } catch (e2) {
