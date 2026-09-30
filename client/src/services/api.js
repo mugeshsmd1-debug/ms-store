@@ -1,5 +1,47 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const SESSION_KEY = 'ms_store_active_user';
+const CUSTOM_API_KEY = 'ms_store_backend_url';
+
+export function normalizeApiUrl(raw) {
+  if (!raw) return '';
+  let url = raw.trim();
+  url = url.replace(/\/+$/, '');
+  if (!url.endsWith('/api') && (url.startsWith('http://') || url.startsWith('https://'))) {
+    url = `${url}/api`;
+  }
+  return url;
+}
+
+export function getEffectiveApiBase() {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (envUrl) {
+    return normalizeApiUrl(envUrl);
+  }
+  try {
+    const custom = (localStorage.getItem(CUSTOM_API_KEY) || '').trim();
+    if (custom) {
+      return normalizeApiUrl(custom);
+    }
+  } catch {}
+  return '/api';
+}
+
+export function setCustomApiUrl(url) {
+  try {
+    if (!url || !url.trim()) {
+      localStorage.removeItem(CUSTOM_API_KEY);
+    } else {
+      localStorage.setItem(CUSTOM_API_KEY, normalizeApiUrl(url));
+    }
+  } catch {}
+}
+
+export function getCustomApiUrl() {
+  try {
+    return localStorage.getItem(CUSTOM_API_KEY) || '';
+  } catch {
+    return '';
+  }
+}
 
 function getSessionUser() {
   try {
@@ -30,14 +72,27 @@ async function request(path, options = {}) {
     ...(currentUser?.email ? { 'x-user-email': currentUser.email } : {}),
   };
 
-  const url = `${API_BASE}${path}`;
+  const apiBase = getEffectiveApiBase();
+  const url = `${apiBase}${path}`;
+
   try {
     const res = await fetch(url, { ...options, headers });
     const contentType = res.headers.get('content-type') || '';
 
     if (!contentType.includes('application/json')) {
+      const isHtml = contentType.includes('text/html');
+      if (apiBase === '/api' && typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+        throw new Error(
+          `Cloud backend URL not connected. Please enter your Render backend URL below, or set VITE_API_URL in Netlify.`
+        );
+      }
+      if (isHtml) {
+        throw new Error(
+          `Backend server returned HTML (Status: ${res.status}). If Render just deployed or went to sleep, please wait 30 seconds for it to wake up and try again.`
+        );
+      }
       throw new Error(
-        `Backend server returned non-JSON response from ${path}. If you are on Netlify, please ensure your backend URL is set via VITE_API_URL.`
+        `Backend server returned invalid response format (${contentType}).`
       );
     }
 
@@ -49,7 +104,7 @@ async function request(path, options = {}) {
   } catch (err) {
     if (err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
       throw new Error(
-        `Cannot connect to MS Store backend server at ${API_BASE}. Please verify your cloud backend is online.`
+        `Cannot reach backend at ${apiBase}. If using Render free tier, it may be waking up (takes ~30-50s). Please check your internet or retry in a moment.`
       );
     }
     throw err;
@@ -186,5 +241,33 @@ export const api = {
   // Factory Reset (Zero Dummy Data)
   async clearAllData() {
     return request('/system/reset', { method: 'POST' });
+  },
+
+  // Backend Connectivity Diagnostics
+  getEffectiveBase() {
+    return getEffectiveApiBase();
+  },
+  setCustomBackendUrl(url) {
+    setCustomApiUrl(url);
+  },
+  getCustomBackendUrl() {
+    return getCustomApiUrl();
+  },
+  async testBackendConnection(testUrl) {
+    const base = testUrl ? normalizeApiUrl(testUrl) : getEffectiveApiBase();
+    try {
+      const res = await fetch(`${base}/api`, { signal: AbortSignal.timeout(6000) });
+      const data = await res.json();
+      return { ok: true, data, url: base };
+    } catch (e1) {
+      try {
+        const root = base.replace(/\/api$/, '');
+        const res2 = await fetch(`${root}/`, { signal: AbortSignal.timeout(6000) });
+        const data2 = await res2.json();
+        return { ok: true, data: data2, url: base };
+      } catch (e2) {
+        return { ok: false, error: e2.message || e1.message, url: base };
+      }
+    }
   },
 };

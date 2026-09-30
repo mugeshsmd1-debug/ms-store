@@ -9,6 +9,15 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Health check and root endpoints
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'MS Store Backend', version: '1.0.0', time: new Date().toISOString() });
+});
+
+app.get('/api', (req, res) => {
+  res.json({ status: 'ok', service: 'MS Store API', version: '1.0.0' });
+});
+
 // ---------------------------------------------
 // SETTINGS ENDPOINTS
 // ---------------------------------------------
@@ -799,6 +808,6 @@ app.get('/api/analytics/pnl', (req, res) => {
 
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`MS Store API Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`MS Store API Server running on port ${PORT} (0.0.0.0)`);
 });
