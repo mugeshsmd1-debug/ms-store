@@ -5,6 +5,7 @@ import InventoryView from './views/InventoryView';
 import ProfitLossView from './views/ProfitLossView';
 import SettingsView from './views/SettingsView';
 import AuthModal from './components/AuthModal';
+import CloudSyncModal from './components/CloudSyncModal';
 import { api } from './services/api';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showCloudSync, setShowCloudSync] = useState(false);
 
   // Fetch all initial store data for the active logged-in user
   const loadInitialData = useCallback(async () => {
@@ -97,7 +99,14 @@ export default function App() {
   if (!user?.email) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-        <AuthModal onAuthenticated={handleAuthenticated} />
+        <AuthModal
+          onAuthenticated={handleAuthenticated}
+          onOpenCloudSync={() => setShowCloudSync(true)}
+        />
+        <CloudSyncModal
+          isOpen={showCloudSync}
+          onClose={() => setShowCloudSync(false)}
+        />
       </div>
     );
   }
@@ -112,6 +121,7 @@ export default function App() {
         settings={settings}
         user={user}
         onLogout={handleLogout}
+        onOpenCloudSync={() => setShowCloudSync(true)}
       />
 
       {/* Main Tab View Content */}
@@ -148,9 +158,16 @@ export default function App() {
             user={user}
             onResetData={loadInitialData}
             onLogout={handleLogout}
+            onOpenCloudSync={() => setShowCloudSync(true)}
           />
         )}
       </main>
+
+      {/* Cloud Sync Modal */}
+      <CloudSyncModal
+        isOpen={showCloudSync}
+        onClose={() => setShowCloudSync(false)}
+      />
 
       {/* Footer */}
       <footer className="no-print border-t border-slate-800/80 bg-slate-950/60 py-4 text-center text-xs text-slate-500">

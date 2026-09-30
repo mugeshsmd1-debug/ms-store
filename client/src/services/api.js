@@ -1,9 +1,23 @@
 import { localStore } from './localStore';
+import { firebaseStore } from './firebaseStore';
+import {
+  isFirebaseConfigured,
+  getFirebaseConfig,
+  saveFirebaseConfig,
+  clearFirebaseConfig
+} from './firebase';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 let useLocalFallback = false;
 
+const getActiveStore = () => (isFirebaseConfigured() ? firebaseStore : localStore);
+
 async function requestWithFallback(path, options = {}, fallbackFn) {
+  // If Firebase is configured, use Firebase directly for cloud data sync across devices
+  if (isFirebaseConfigured()) {
+    return fallbackFn();
+  }
+
   if (useLocalFallback) {
     return fallbackFn();
   }
@@ -21,15 +35,13 @@ async function requestWithFallback(path, options = {}, fallbackFn) {
     // Check if response is valid JSON from backend
     const contentType = res.headers.get('content-type') || '';
     if (!res.ok && res.status === 404) {
-      // Backend not present (e.g. static Netlify deployment)
-      console.warn(`Backend endpoint ${path} returned 404. Switching to browser persistent storage.`);
+      console.warn(`Backend endpoint ${path} returned 404. Switching to persistent storage.`);
       useLocalFallback = true;
       return fallbackFn();
     }
 
     if (!contentType.includes('application/json')) {
-      // Returned HTML (e.g. Netlify fallback redirect to index.html)
-      console.warn(`Backend endpoint ${path} returned non-JSON. Switching to browser persistent storage.`);
+      console.warn(`Backend endpoint ${path} returned non-JSON. Switching to persistent storage.`);
       useLocalFallback = true;
       return fallbackFn();
     }
@@ -40,9 +52,8 @@ async function requestWithFallback(path, options = {}, fallbackFn) {
     }
     return data;
   } catch (err) {
-    // If network connection failed or server not running (e.g. static Netlify)
     if (!useLocalFallback && (err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
-      console.warn('Backend server is unreachable. Seamlessly activating browser storage engine for Netlify.');
+      console.warn('Backend server is unreachable. Seamlessly activating storage engine.');
       useLocalFallback = true;
       return fallbackFn();
     }
@@ -51,9 +62,15 @@ async function requestWithFallback(path, options = {}, fallbackFn) {
 }
 
 export const api = {
+  // Firebase configuration status
+  isFirebaseConfigured,
+  getFirebaseConfig,
+  saveFirebaseConfig,
+  clearFirebaseConfig,
+
   // Settings
   async getSettings() {
-    return requestWithFallback('/settings', {}, () => localStore.getSettings());
+    return requestWithFallback('/settings', {}, () => getActiveStore().getSettings());
   },
 
   async updateSettings(settings) {
@@ -64,7 +81,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
       },
-      () => localStore.updateSettings(settings)
+      () => getActiveStore().updateSettings(settings)
     );
   },
 
@@ -78,12 +95,12 @@ export const api = {
     return requestWithFallback(
       `/products?${query.toString()}`,
       {},
-      () => localStore.getProducts(params)
+      () => getActiveStore().getProducts(params)
     );
   },
 
   async getCategories() {
-    return requestWithFallback('/products/categories', {}, () => localStore.getCategories());
+    return requestWithFallback('/products/categories', {}, () => getActiveStore().getCategories());
   },
 
   async createProduct(productData) {
@@ -94,7 +111,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(productData),
       },
-      () => localStore.createProduct(productData)
+      () => getActiveStore().createProduct(productData)
     );
   },
 
@@ -106,7 +123,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(productData),
       },
-      () => localStore.updateProduct(id, productData)
+      () => getActiveStore().updateProduct(id, productData)
     );
   },
 
@@ -118,7 +135,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      () => localStore.adjustStock(id, data)
+      () => getActiveStore().adjustStock(id, data)
     );
   },
 
@@ -126,7 +143,7 @@ export const api = {
     return requestWithFallback(
       `/products/${id}`,
       { method: 'DELETE' },
-      () => localStore.deleteProduct(id)
+      () => getActiveStore().deleteProduct(id)
     );
   },
 
@@ -139,7 +156,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData),
       },
-      () => localStore.createOrder(orderData)
+      () => getActiveStore().createOrder(orderData)
     );
   },
 
@@ -151,20 +168,26 @@ export const api = {
     return requestWithFallback(
       `/orders?${query.toString()}`,
       {},
-      () => localStore.getOrders(params)
+      () => getActiveStore().getOrders(params)
     );
   },
 
   async getOrderById(id) {
-    return requestWithFallback(`/orders/${id}`, {}, () => localStore.getOrderById(id));
+    return requestWithFallback(`/orders/${id}`, {}, () => getActiveStore().getOrderById(id));
   },
 
   // User Authentication & Account Registry
   async getCurrentUser() {
+    if (isFirebaseConfigured()) {
+      return firebaseStore.getCurrentUser();
+    }
     return requestWithFallback('/auth/me', {}, () => localStore.getCurrentUser());
   },
 
   async signup(userData) {
+    if (isFirebaseConfigured()) {
+      return firebaseStore.signup(userData);
+    }
     return requestWithFallback(
       '/auth/signup',
       {
@@ -177,6 +200,9 @@ export const api = {
   },
 
   async login(email, password) {
+    if (isFirebaseConfigured()) {
+      return firebaseStore.login(email, password);
+    }
     return requestWithFallback(
       '/auth/login',
       {
@@ -189,6 +215,9 @@ export const api = {
   },
 
   async logout() {
+    if (isFirebaseConfigured()) {
+      return firebaseStore.logout();
+    }
     localStore.logout();
     return requestWithFallback(
       '/auth/logout',
@@ -212,11 +241,10 @@ export const api = {
 
   // Wipe all store data to start fresh (Zero dummy data)
   async clearAllData() {
-    localStore.clearAllData();
     return requestWithFallback(
       '/system/reset',
       { method: 'POST' },
-      () => ({ success: true })
+      () => getActiveStore().clearAllData()
     );
   },
 
@@ -238,8 +266,7 @@ export const api = {
     return requestWithFallback(
       `/analytics/pnl${queryString ? '?' + queryString : ''}`,
       {},
-      () => localStore.getPnL(params)
+      () => getActiveStore().getPnL(params)
     );
   },
 };
-

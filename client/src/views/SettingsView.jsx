@@ -13,11 +13,14 @@ import {
   Trash2,
   AlertTriangle,
   RotateCcw,
-  LogOut
+  LogOut,
+  Cloud,
+  Flame
 } from 'lucide-react';
 import { api } from '../services/api';
+import { isFirebaseConfigured } from '../services/firebase';
 
-export default function SettingsView({ settings, onSettingsUpdated, user, onResetData, onLogout }) {
+export default function SettingsView({ settings, onSettingsUpdated, user, onResetData, onLogout, onOpenCloudSync }) {
   const [formData, setFormData] = useState({
     shop_name: 'MS Store',
     tagline: 'Smart Retail & Inventory Management',
@@ -115,14 +118,54 @@ export default function SettingsView({ settings, onSettingsUpdated, user, onRese
         <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-[11px] text-indigo-300 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 flex-shrink-0 text-indigo-400" />
           <span>
-            All your products, invoices, and reports are saved under <strong className="text-white">{user?.email}</strong>. Logging in with this email ID on any session will automatically restore all your data.
+            All your products, invoices, and reports are saved under <strong className="text-white">{user?.email}</strong>.
           </span>
         </div>
       </div>
 
-      {/* 2. Shop & POS Configuration */}
+      {/* 2. Cloud Sync & Multi-Device Mobile Sync */}
+      <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400">
+              <Cloud className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-white m-0">Cloud Sync & Mobile Access</h2>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    isFirebaseConfigured()
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}
+                >
+                  {isFirebaseConfigured() ? 'CLOUD SYNC ACTIVE' : 'LOCAL MODE'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 m-0 mt-0.5">
+                {isFirebaseConfigured()
+                  ? 'Connected to Google Firebase. Your products and sales sync in real-time between PC and Mobile.'
+                  : 'Connect Firebase to sync your login ID, inventory, and sales between your PC and Mobile phone.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenCloudSync}
+            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-orange-500/20 self-start sm:self-auto"
+          >
+            <Flame className="w-4 h-4" />
+            <span>{isFirebaseConfigured() ? 'Manage Cloud Sync' : 'Connect Firebase Sync'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3. Shop & POS Configuration */}
       <div className="bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-xl">
         <div className="flex items-center gap-3 pb-6 border-b border-slate-800">
+
           <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-400">
             <Settings className="w-6 h-6" />
           </div>

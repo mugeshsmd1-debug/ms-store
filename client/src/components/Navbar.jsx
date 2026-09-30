@@ -1,7 +1,29 @@
 import React from 'react';
-import { ShoppingBag, Package, TrendingUp, Settings, AlertTriangle, Sparkles, LogOut, User } from 'lucide-react';
+import {
+  ShoppingBag,
+  Package,
+  TrendingUp,
+  Settings,
+  AlertTriangle,
+  Sparkles,
+  LogOut,
+  Cloud,
+  CheckCircle2
+} from 'lucide-react';
+import { isFirebaseConfigured } from '../services/firebase';
 
-export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStockCount = 0, settings, user, onLogout }) {
+export default function Navbar({
+  activeTab,
+  setActiveTab,
+  cartCount = 0,
+  lowStockCount = 0,
+  settings,
+  user,
+  onLogout,
+  onOpenCloudSync
+}) {
+  const isCloudActive = isFirebaseConfigured();
+
   const tabs = [
     { id: 'billing', label: 'POS Billing', icon: ShoppingBag, badge: cartCount > 0 ? cartCount : null, badgeColor: 'bg-indigo-500' },
     { id: 'inventory', label: 'Stock & Inventory', icon: Package, badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
@@ -27,7 +49,7 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
                   POS PRO
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 -mt-0.5 truncate max-w-[160px] sm:max-w-xs m-0">
+              <p className="text-[11px] text-slate-400 -mt-0.5 truncate max-w-[140px] sm:max-w-xs m-0">
                 {settings?.tagline || 'Smart Retail & Billing'}
               </p>
             </div>
@@ -63,8 +85,30 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
             })}
           </nav>
 
-          {/* Right Section: Low Stock Warning & Owner Profile Chip */}
+          {/* Right Section: Cloud Sync status, Low Stock, & User Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Cloud Sync Status Indicator Button */}
+            <button
+              type="button"
+              onClick={onOpenCloudSync}
+              title={isCloudActive ? 'Cloud Sync Active (Firebase) - Synced across PC & Mobile' : 'Local Storage Mode - Click to connect Cloud Sync for mobile access'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                isCloudActive
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
+              }`}
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isCloudActive ? 'Cloud Synced' : 'Sync Mobile'}
+              </span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isCloudActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+            </button>
+
             {lowStockCount > 0 && (
               <div
                 onClick={() => setActiveTab('inventory')}
@@ -79,7 +123,7 @@ export default function Navbar({ activeTab, setActiveTab, cartCount = 0, lowStoc
             {/* Owner Email ID Profile Chip with Log Out Button */}
             {user?.email && (
               <div className="flex items-center gap-2 p-1 pl-2.5 rounded-2xl bg-slate-800/90 border border-slate-700/80">
-                <div className="flex items-center gap-2 max-w-[130px] sm:max-w-[200px]">
+                <div className="flex items-center gap-2 max-w-[120px] sm:max-w-[180px]">
                   <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                     {(user.name || user.email || 'O')[0].toUpperCase()}
                   </div>

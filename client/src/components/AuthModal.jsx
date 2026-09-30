@@ -13,11 +13,15 @@ import {
   UserPlus,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Cloud,
+  Smartphone
 } from 'lucide-react';
 import { api } from '../services/api';
+import { isFirebaseConfigured } from '../services/firebase';
 
-export default function AuthModal({ onAuthenticated }) {
+export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
+  const isCloudActive = isFirebaseConfigured();
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'signup'
 
   // Login form state
@@ -61,7 +65,14 @@ export default function AuthModal({ onAuthenticated }) {
       const userSession = await api.login(email, password);
       onAuthenticated(userSession);
     } catch (err) {
-      setError(err.message || 'Login failed. Please verify your credentials.');
+      const msg = err.message || 'Login failed.';
+      if (!isCloudActive && (msg.includes('No registered account') || msg.includes('Invalid email'))) {
+        setError(
+          'Account not found on this device. If you registered on your PC, click "Connect Mobile Sync" above to connect Firebase and sync your account!'
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -120,8 +131,8 @@ export default function AuthModal({ onAuthenticated }) {
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-20 bg-indigo-500/20 blur-3xl rounded-full pointer-events-none" />
 
         {/* Top Header Logo */}
-        <div className="flex flex-col items-center text-center mb-6">
-          <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 text-white shadow-xl shadow-indigo-600/30 mb-3 preserve-3d">
+        <div className="flex flex-col items-center text-center mb-4">
+          <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 text-white shadow-xl shadow-indigo-600/30 mb-2 preserve-3d">
             <Sparkles className="w-7 h-7 animate-pulse" />
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight m-0">
@@ -129,13 +140,39 @@ export default function AuthModal({ onAuthenticated }) {
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-sm m-0">
             {activeTab === 'login'
-              ? 'Log in with your Email ID and Password. All your store products, bills, and profit reports are saved under your ID.'
-              : 'Sign up to create your secure store ID. All your inventory and sales data will be tied directly to your account.'}
+              ? 'Log in with your Email ID and Password to load your store data.'
+              : 'Sign up to create your store ID. All your products and invoices will be saved under this account.'}
           </p>
         </div>
 
+        {/* Mobile & Cloud Sync Status Banner */}
+        <div className="mb-4 flex items-center justify-between p-2.5 rounded-2xl bg-slate-800/70 border border-slate-700/80 text-xs">
+          <div className="flex items-center gap-2 truncate">
+            <Cloud className={`w-4 h-4 flex-shrink-0 ${isCloudActive ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span className="truncate">
+              {isCloudActive ? (
+                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Cloud Synced (Mobile + PC)
+                </span>
+              ) : (
+                <span className="text-slate-300">Device Local Mode</span>
+              )}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenCloudSync}
+            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold text-[11px] underline pl-2 flex-shrink-0"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>{isCloudActive ? 'Config' : 'Sync Mobile 📱'}</span>
+          </button>
+        </div>
+
         {/* Tabs: Log In vs Sign Up */}
-        <div className="flex items-center gap-1 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 mb-6 text-xs font-bold">
+        <div className="flex items-center gap-1 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 mb-5 text-xs font-bold">
           <button
             type="button"
             onClick={() => {
@@ -170,7 +207,7 @@ export default function AuthModal({ onAuthenticated }) {
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-5 p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center gap-2 animate-fadeIn">
+          <div className="mb-4 p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-center gap-2 animate-fadeIn">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </div>
