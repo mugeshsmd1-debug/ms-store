@@ -64,7 +64,7 @@ export default function SettingsView({ settings, onSettingsUpdated }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+        <form noValidate onSubmit={handleSubmit} className="mt-6 space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Shop Name */}
             <div>
@@ -75,7 +75,6 @@ export default function SettingsView({ settings, onSettingsUpdated }) {
                 <Store className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
-                  required
                   value={formData.shop_name}
                   onChange={(e) => setFormData({ ...formData, shop_name: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
@@ -107,7 +106,6 @@ export default function SettingsView({ settings, onSettingsUpdated }) {
                 <Phone className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
-                  required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
@@ -164,7 +162,7 @@ export default function SettingsView({ settings, onSettingsUpdated }) {
               <Percent className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
               <input
                 type="number"
-                step="0.1"
+                step="any"
                 min="0"
                 max="100"
                 value={formData.tax_percentage}

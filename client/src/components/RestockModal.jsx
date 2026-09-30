@@ -3,7 +3,7 @@ import { X, Plus, PackageCheck, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function RestockModal({ product, isOpen, onClose, onRestock }) {
   const [mode, setMode] = useState('add'); // 'add' or 'set'
-  const [amount, setAmount] = useState(10);
+  const [amount, setAmount] = useState('10');
   const [note, setNote] = useState('Stock shipment replenishment');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -11,14 +11,20 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
   if (!isOpen || !product) return null;
 
   const currentStock = product.stock_quantity;
-  const newStock = mode === 'add' ? currentStock + (parseInt(amount, 10) || 0) : parseInt(amount, 10) || 0;
+  const parsedAmount = parseInt(String(amount).trim(), 10) || 0;
+  const newStock = mode === 'add' ? currentStock + parsedAmount : parsedAmount;
 
   const quickAmounts = [5, 10, 20, 50, 100];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isNaN(parsedAmount)) {
+      setError('Please enter a valid whole number for quantity.');
+      return;
+    }
+
     if (newStock < 0) {
-      setError('Stock cannot be negative.');
+      setError('Projected stock cannot be negative.');
       return;
     }
 
@@ -26,13 +32,13 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
       setLoading(true);
       setError('');
       if (mode === 'add') {
-        await onRestock(product.id, { delta: parseInt(amount, 10), note, type: 'RESTOCK' });
+        await onRestock(product.id, { delta: parsedAmount, note, type: 'RESTOCK' });
       } else {
-        await onRestock(product.id, { newStock: parseInt(amount, 10), note, type: 'ADJUSTMENT' });
+        await onRestock(product.id, { newStock: parsedAmount, note, type: 'ADJUSTMENT' });
       }
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to update stock');
     } finally {
       setLoading(false);
     }
@@ -58,8 +64,8 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        {/* Form with noValidate */}
+        <form noValidate onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -88,7 +94,7 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
           <div className="flex p-1 bg-slate-800 rounded-xl border border-slate-700 text-xs font-medium">
             <button
               type="button"
-              onClick={() => { setMode('add'); setAmount(10); }}
+              onClick={() => { setMode('add'); setAmount('10'); }}
               className={`flex-1 py-1.5 rounded-lg transition ${
                 mode === 'add' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
@@ -97,7 +103,7 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
             </button>
             <button
               type="button"
-              onClick={() => { setMode('set'); setAmount(currentStock); }}
+              onClick={() => { setMode('set'); setAmount(String(currentStock)); }}
               className={`flex-1 py-1.5 rounded-lg transition ${
                 mode === 'set' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
@@ -115,9 +121,9 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
                   <button
                     key={q}
                     type="button"
-                    onClick={() => setAmount(q)}
+                    onClick={() => setAmount(String(q))}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition ${
-                      amount === q
+                      parseInt(amount, 10) === q
                         ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300'
                         : 'bg-slate-800/70 border-slate-700 text-slate-300 hover:bg-slate-700'
                     }`}
@@ -136,10 +142,10 @@ export default function RestockModal({ product, isOpen, onClose, onRestock }) {
             </label>
             <input
               type="number"
+              step="1"
               min={mode === 'add' ? 1 : 0}
-              required
               value={amount}
-              onChange={(e) => setAmount(parseInt(e.target.value, 10) || 0)}
+              onChange={(e) => setAmount(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-base font-bold text-white focus:outline-none focus:border-indigo-500"
             />
           </div>

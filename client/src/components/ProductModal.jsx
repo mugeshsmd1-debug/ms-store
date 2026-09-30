@@ -10,8 +10,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
     category: 'General',
     cost_price: '',
     selling_price: '',
-    stock_quantity: 10,
-    low_stock_threshold: 5,
+    stock_quantity: '10',
+    low_stock_threshold: '5',
     unit: 'pcs',
     image_emoji: '📦',
   });
@@ -24,10 +24,10 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         name: product.name || '',
         sku: product.sku || '',
         category: product.category || 'General',
-        cost_price: product.cost_price || '',
-        selling_price: product.selling_price || '',
-        stock_quantity: product.stock_quantity ?? 0,
-        low_stock_threshold: product.low_stock_threshold ?? 5,
+        cost_price: String(product.cost_price ?? ''),
+        selling_price: String(product.selling_price ?? ''),
+        stock_quantity: String(product.stock_quantity ?? 0),
+        low_stock_threshold: String(product.low_stock_threshold ?? 5),
         unit: product.unit || 'pcs',
         image_emoji: product.image_emoji || '📦',
       });
@@ -40,8 +40,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         category: categories[0] || 'General',
         cost_price: '',
         selling_price: '',
-        stock_quantity: 15,
-        low_stock_threshold: 5,
+        stock_quantity: '15',
+        low_stock_threshold: '5',
         unit: 'pcs',
         image_emoji: '📦',
       });
@@ -51,49 +51,89 @@ export default function ProductModal({ product, categories = [], currencySymbol 
 
   if (!isOpen) return null;
 
-  const cost = parseFloat(formData.cost_price) || 0;
-  const sell = parseFloat(formData.selling_price) || 0;
-  const margin = sell > 0 ? (((sell - cost) / sell) * 100).toFixed(1) : 0;
-  const profitPerItem = (sell - cost).toFixed(2);
+  // Clean parse helper
+  const parseNum = (val) => {
+    if (val === null || val === undefined || val === '') return NaN;
+    const clean = String(val).replace(/,/g, '.').trim();
+    return parseFloat(clean);
+  };
+
+  const cost = parseNum(formData.cost_price);
+  const sell = parseNum(formData.selling_price);
+  const validCost = !isNaN(cost) && cost >= 0 ? cost : 0;
+  const validSell = !isNaN(sell) && sell >= 0 ? sell : 0;
+  const margin = validSell > 0 ? (((validSell - validCost) / validSell) * 100).toFixed(1) : '0.0';
+  const profitPerItem = (validSell - validCost).toFixed(2);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!formData.name.trim() || !formData.sku.trim()) {
-      setError('Product Name and SKU are required.');
+    const cleanName = formData.name.trim();
+    const cleanSku = formData.sku.trim();
+
+    if (!cleanName) {
+      setError('Please enter a product name.');
       return;
     }
 
-    if (isNaN(cost) || isNaN(sell) || cost < 0 || sell < 0) {
-      setError('Please provide valid positive cost and selling prices.');
+    if (!cleanSku) {
+      setError('Please enter a valid SKU / Code.');
       return;
     }
+
+    if (isNaN(cost) || cost < 0) {
+      setError('Please enter a valid cost price (0 or greater).');
+      return;
+    }
+
+    if (isNaN(sell) || sell < 0) {
+      setError('Please enter a valid selling price (0 or greater).');
+      return;
+    }
+
+    const stockQty = parseInt(String(formData.stock_quantity).trim(), 10);
+    if (isNaN(stockQty) || stockQty < 0) {
+      setError('Stock quantity must be a non-negative whole number.');
+      return;
+    }
+
+    const threshold = parseInt(String(formData.low_stock_threshold).trim(), 10);
+    const validThreshold = isNaN(threshold) || threshold < 1 ? 5 : threshold;
 
     try {
       setLoading(true);
       await onSave({
-        ...formData,
+        name: cleanName,
+        sku: cleanSku,
+        category: formData.category ? formData.category.trim() : 'General',
         cost_price: cost,
         selling_price: sell,
-        stock_quantity: parseInt(formData.stock_quantity, 10) || 0,
-        low_stock_threshold: parseInt(formData.low_stock_threshold, 10) || 5,
+        stock_quantity: stockQty,
+        low_stock_threshold: validThreshold,
+        unit: formData.unit || 'pcs',
+        image_emoji: formData.image_emoji || '📦',
       });
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to save product');
     } finally {
       setLoading(false);
     }
   };
 
   const generateNewSku = () => {
-    const prefix = formData.category ? formData.category.slice(0, 4).toUpperCase() : 'SKU';
-    setFormData(prev => ({
+    const prefix = formData.category ? formData.category.slice(0, 4).toUpperCase().replace(/[^A-Z]/g, '') : 'SKU';
+    setFormData((prev) => ({
       ...prev,
-      sku: `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`,
+      sku: `${prefix || 'PROD'}-${Math.floor(1000 + Math.random() * 9000)}`,
     }));
   };
+
+  // Unique category suggestions
+  const uniqueCategories = Array.from(
+    new Set([...categories, 'Electronics', 'Groceries', 'Beverages', 'Lifestyle', 'Stationery', 'General'])
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -121,8 +161,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
           </button>
         </div>
 
-        {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-4">
+        {/* Modal Form with noValidate to prevent native browser regex failures */}
+        <form noValidate onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-4">
           {error && (
             <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -160,7 +200,6 @@ export default function ProductModal({ product, categories = [], currencySymbol 
             </label>
             <input
               type="text"
-              required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="e.g. Wireless Mouse Pro"
@@ -183,7 +222,6 @@ export default function ProductModal({ product, categories = [], currencySymbol 
               </div>
               <input
                 type="text"
-                required
                 value={formData.sku}
                 onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
                 placeholder="ELEC-001"
@@ -197,21 +235,16 @@ export default function ProductModal({ product, categories = [], currencySymbol 
               </label>
               <input
                 type="text"
-                list="category-suggestions"
+                list="category-suggestions-list"
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 placeholder="Category"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
               />
-              <datalist id="category-suggestions">
-                {categories.map((cat) => (
+              <datalist id="category-suggestions-list">
+                {uniqueCategories.map((cat) => (
                   <option key={cat} value={cat} />
                 ))}
-                <option value="Electronics" />
-                <option value="Groceries" />
-                <option value="Beverages" />
-                <option value="Lifestyle" />
-                <option value="Stationery" />
               </datalist>
             </div>
           </div>
@@ -225,7 +258,9 @@ export default function ProductModal({ product, categories = [], currencySymbol 
               </span>
               <span
                 className={`text-xs px-2.5 py-0.5 rounded-full font-bold font-mono ${
-                  sell >= cost ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400'
+                  validSell >= validCost
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-400'
                 }`}
               >
                 Profit: {currencySymbol}{profitPerItem} ({margin}%)
@@ -243,9 +278,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
                   </span>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0"
-                    required
                     value={formData.cost_price}
                     onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
                     placeholder="0.00"
@@ -264,9 +298,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
                   </span>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0"
-                    required
                     value={formData.selling_price}
                     onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
                     placeholder="0.00"
@@ -285,8 +318,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
               </label>
               <input
                 type="number"
+                step="1"
                 min="0"
-                required
                 value={formData.stock_quantity}
                 onChange={(e) => setFormData({ ...formData, stock_quantity: e.target.value })}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500 font-bold"
@@ -299,6 +332,7 @@ export default function ProductModal({ product, categories = [], currencySymbol 
               </label>
               <input
                 type="number"
+                step="1"
                 min="1"
                 value={formData.low_stock_threshold}
                 onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })}
