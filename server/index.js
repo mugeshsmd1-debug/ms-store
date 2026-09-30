@@ -99,10 +99,11 @@ app.post('/api/products', (req, res) => {
 
     const initialStock = parseInt(stock_quantity, 10) || 0;
     const threshold = parseInt(low_stock_threshold, 10) || 5;
+    const gstPct = req.body.gst_percentage !== undefined ? parseFloat(req.body.gst_percentage) : 5.0;
 
     const insert = db.prepare(`
-      INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji, gst_percentage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insert.run(
@@ -114,7 +115,8 @@ app.post('/api/products', (req, res) => {
       initialStock,
       threshold,
       unit || 'pcs',
-      image_emoji || '📦'
+      image_emoji || '📦',
+      gstPct
     );
 
     const productId = result.lastInsertRowid;
@@ -136,7 +138,7 @@ app.post('/api/products', (req, res) => {
 app.put('/api/products/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji } = req.body;
+    const { name, sku, category, cost_price, selling_price, stock_quantity, low_stock_threshold, unit, image_emoji, gst_percentage } = req.body;
 
     const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     if (!existing) {
@@ -165,6 +167,7 @@ app.put('/api/products/:id', (req, res) => {
           low_stock_threshold = COALESCE(?, low_stock_threshold),
           unit = COALESCE(?, unit),
           image_emoji = COALESCE(?, image_emoji),
+          gst_percentage = COALESCE(?, gst_percentage),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -177,6 +180,7 @@ app.put('/api/products/:id', (req, res) => {
       low_stock_threshold !== undefined ? parseInt(low_stock_threshold, 10) : null,
       unit || null,
       image_emoji || null,
+      gst_percentage !== undefined ? parseFloat(gst_percentage) : null,
       id
     );
 
@@ -301,6 +305,11 @@ app.post('/api/orders', (req, res) => {
         const itemCost = costPrice * qty;
         const itemProfit = (sellingPrice - costPrice) * qty;
 
+        // Custom GST per item
+        const itemGst = item.gst_percentage !== undefined
+          ? parseFloat(item.gst_percentage)
+          : (product.gst_percentage !== undefined ? parseFloat(product.gst_percentage) : (effectiveTaxRate * 100));
+
         subtotal += itemSubtotal;
         totalCost += itemCost;
 
@@ -310,16 +319,25 @@ app.post('/api/orders', (req, res) => {
           sellingPrice,
           costPrice,
           itemSubtotal,
-          itemProfit
+          itemProfit,
+          gstPercentage: isNaN(itemGst) ? 0 : itemGst
         });
       }
 
       // Calculations
       const discount = Math.min(subtotal, Math.max(0, parseFloat(discount_amount) || 0));
+      const discountRatio = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
+
+      let totalTaxAmount = 0;
+      for (const vItem of verifiedItems) {
+        const itemTaxable = vItem.itemSubtotal * discountRatio;
+        vItem.taxAmount = parseFloat((itemTaxable * (vItem.gstPercentage / 100)).toFixed(2));
+        totalTaxAmount += vItem.taxAmount;
+      }
+      totalTaxAmount = parseFloat(totalTaxAmount.toFixed(2));
+
       const taxable = Math.max(0, subtotal - discount);
-      const taxAmount = parseFloat((taxable * effectiveTaxRate).toFixed(2));
-      const totalAmount = parseFloat((taxable + taxAmount).toFixed(2));
-      // Net profit = (total revenue without tax) - total cost of goods
+      const totalAmount = parseFloat((taxable + totalTaxAmount).toFixed(2));
       const netProfit = parseFloat((taxable - totalCost).toFixed(2));
 
       // Generate invoice number e.g. INV-20260930-1042
@@ -339,7 +357,7 @@ app.post('/api/orders', (req, res) => {
         customer_phone ? customer_phone.trim() : '',
         parseFloat(subtotal.toFixed(2)),
         discount,
-        taxAmount,
+        totalTaxAmount,
         totalAmount,
         parseFloat(totalCost.toFixed(2)),
         netProfit,
@@ -350,8 +368,8 @@ app.post('/api/orders', (req, res) => {
 
       // Insert Order Items and Deduct Stock
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, sku, cost_price, selling_price, quantity, subtotal, profit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_id, product_name, sku, cost_price, selling_price, quantity, subtotal, gst_percentage, tax_amount, profit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStock = db.prepare(`
@@ -376,6 +394,8 @@ app.post('/api/orders', (req, res) => {
           vItem.sellingPrice,
           vItem.qty,
           parseFloat(vItem.itemSubtotal.toFixed(2)),
+          vItem.gstPercentage,
+          vItem.taxAmount,
           parseFloat(vItem.itemProfit.toFixed(2))
         );
 
@@ -397,7 +417,7 @@ app.post('/api/orders', (req, res) => {
         customer_phone: customer_phone || '',
         subtotal: parseFloat(subtotal.toFixed(2)),
         discount_amount: discount,
-        tax_amount: taxAmount,
+        tax_amount: totalTaxAmount,
         total_amount: totalAmount,
         total_cost: parseFloat(totalCost.toFixed(2)),
         profit: netProfit,
@@ -405,10 +425,13 @@ app.post('/api/orders', (req, res) => {
         created_at: new Date().toISOString(),
         items: verifiedItems.map(vi => ({
           name: vi.product.name,
+          product_name: vi.product.name,
           sku: vi.product.sku,
           quantity: vi.qty,
           selling_price: vi.sellingPrice,
-          subtotal: vi.itemSubtotal
+          subtotal: vi.itemSubtotal,
+          gst_percentage: vi.gstPercentage,
+          tax_amount: vi.taxAmount
         }))
       };
     });

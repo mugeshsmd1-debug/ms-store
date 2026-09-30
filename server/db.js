@@ -62,6 +62,8 @@ function initDatabase() {
       selling_price REAL NOT NULL,
       quantity INTEGER NOT NULL,
       subtotal REAL NOT NULL,
+      gst_percentage REAL DEFAULT 0.0,
+      tax_amount REAL DEFAULT 0.0,
       profit REAL NOT NULL
     );
 
@@ -75,6 +77,19 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migrations for existing tables
+  try {
+    db.exec('ALTER TABLE products ADD COLUMN gst_percentage REAL DEFAULT 5.0');
+  } catch (e) {}
+
+  try {
+    db.exec('ALTER TABLE order_items ADD COLUMN gst_percentage REAL DEFAULT 0.0');
+  } catch (e) {}
+
+  try {
+    db.exec('ALTER TABLE order_items ADD COLUMN tax_amount REAL DEFAULT 0.0');
+  } catch (e) {}
 
   // Ensure default settings exist
   const existingSettings = db.prepare('SELECT id FROM settings WHERE id = 1').get();

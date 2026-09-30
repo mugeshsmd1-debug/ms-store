@@ -14,6 +14,7 @@ export default function ProductModal({ product, categories = [], currencySymbol 
     low_stock_threshold: '5',
     unit: 'pcs',
     image_emoji: '📦',
+    gst_percentage: '5',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -30,6 +31,7 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         low_stock_threshold: String(product.low_stock_threshold ?? 5),
         unit: product.unit || 'pcs',
         image_emoji: product.image_emoji || '📦',
+        gst_percentage: String(product.gst_percentage ?? 5),
       });
     } else {
       // Auto generate a SKU for new product
@@ -44,6 +46,7 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         low_stock_threshold: '5',
         unit: 'pcs',
         image_emoji: '📦',
+        gst_percentage: '5',
       });
     }
     setError('');
@@ -113,6 +116,7 @@ export default function ProductModal({ product, categories = [], currencySymbol 
         low_stock_threshold: validThreshold,
         unit: formData.unit || 'pcs',
         image_emoji: formData.image_emoji || '📦',
+        gst_percentage: parseNum(formData.gst_percentage) || 0,
       });
       onClose();
     } catch (err) {
@@ -310,8 +314,8 @@ export default function ProductModal({ product, categories = [], currencySymbol 
             </div>
           </div>
 
-          {/* Stock & Unit Row */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Stock, Unit & Default GST Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Stock Quantity *
@@ -356,6 +360,23 @@ export default function ProductModal({ product, categories = [], currencySymbol 
                 <option value="bottle">bottle</option>
                 <option value="meter">meter</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Default GST %</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  max="100"
+                  value={formData.gst_percentage}
+                  onChange={(e) => setFormData({ ...formData, gst_percentage: e.target.value })}
+                  placeholder="5"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-500"
+                />
+                <span className="absolute right-3 top-2 text-xs text-slate-500 font-mono">%</span>
+              </div>
             </div>
           </div>
 

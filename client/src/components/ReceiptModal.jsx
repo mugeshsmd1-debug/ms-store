@@ -103,6 +103,7 @@ export default function ReceiptModal({ receipt, settings, onClose }) {
                     <th className="text-left pb-1 font-semibold">Item</th>
                     <th className="text-center pb-1 font-semibold">Qty</th>
                     <th className="text-right pb-1 font-semibold">Price</th>
+                    <th className="text-center pb-1 font-semibold">GST</th>
                     <th className="text-right pb-1 font-semibold">Total</th>
                   </tr>
                 </thead>
@@ -117,6 +118,9 @@ export default function ReceiptModal({ receipt, settings, onClose }) {
                       </td>
                       <td className="py-1.5 text-right text-slate-600 font-mono">
                         {currency}{item.selling_price}
+                      </td>
+                      <td className="py-1.5 text-center font-mono text-[11px] text-slate-600">
+                        {item.gst_percentage !== undefined ? `${item.gst_percentage}%` : '0%'}
                       </td>
                       <td className="py-1.5 text-right font-bold text-slate-900 font-mono">
                         {currency}{parseFloat(item.subtotal).toFixed(2)}
@@ -141,8 +145,8 @@ export default function ReceiptModal({ receipt, settings, onClose }) {
               )}
               {receipt.tax_amount > 0 && (
                 <div className="flex justify-between text-slate-600">
-                  <span>Tax ({settings?.tax_percentage}%)</span>
-                  <span className="font-mono">+{currency}{receipt.tax_amount?.toFixed(2)}</span>
+                  <span>GST / Tax Total</span>
+                  <span className="font-mono font-semibold text-slate-900">+{currency}{receipt.tax_amount?.toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between text-base font-extrabold text-slate-950 pt-2 border-t border-slate-200">

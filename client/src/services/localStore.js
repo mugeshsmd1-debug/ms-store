@@ -239,6 +239,10 @@ export const localStore = {
       const itemCost = prod.cost_price * qty;
       const itemProfit = (prod.selling_price - prod.cost_price) * qty;
 
+      const itemGst = item.gst_percentage !== undefined
+        ? parseFloat(item.gst_percentage)
+        : (prod.gst_percentage !== undefined ? parseFloat(prod.gst_percentage) : (effectiveTaxRate * 100));
+
       subtotal += itemSubtotal;
       totalCost += itemCost;
 
@@ -249,6 +253,7 @@ export const localStore = {
         cost_price: prod.cost_price,
         subtotal: itemSubtotal,
         profit: itemProfit,
+        gst_percentage: isNaN(itemGst) ? 0 : itemGst,
       });
 
       // Deduct stock
@@ -259,9 +264,18 @@ export const localStore = {
     setStored(STORAGE_KEYS.PRODUCTS, prods);
 
     const discount = Math.min(subtotal, Math.max(0, parseFloat(discount_amount) || 0));
+    const discountRatio = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
+
+    let totalTaxAmount = 0;
+    for (const vItem of verifiedItems) {
+      const itemTaxable = vItem.subtotal * discountRatio;
+      vItem.tax_amount = parseFloat((itemTaxable * (vItem.gst_percentage / 100)).toFixed(2));
+      totalTaxAmount += vItem.tax_amount;
+    }
+    totalTaxAmount = parseFloat(totalTaxAmount.toFixed(2));
+
     const taxable = Math.max(0, subtotal - discount);
-    const taxAmount = parseFloat((taxable * effectiveTaxRate).toFixed(2));
-    const totalAmount = parseFloat((taxable + taxAmount).toFixed(2));
+    const totalAmount = parseFloat((taxable + totalTaxAmount).toFixed(2));
     const netProfit = parseFloat((taxable - totalCost).toFixed(2));
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -276,7 +290,7 @@ export const localStore = {
       customer_phone: customer_phone ? customer_phone.trim() : '',
       subtotal: parseFloat(subtotal.toFixed(2)),
       discount_amount: discount,
-      tax_amount: taxAmount,
+      tax_amount: totalTaxAmount,
       total_amount: totalAmount,
       total_cost: parseFloat(totalCost.toFixed(2)),
       profit: netProfit,
@@ -291,6 +305,8 @@ export const localStore = {
         selling_price: vi.selling_price,
         cost_price: vi.cost_price,
         subtotal: vi.subtotal,
+        gst_percentage: vi.gst_percentage,
+        tax_amount: vi.tax_amount,
         profit: vi.profit,
       })),
     };

@@ -47,8 +47,17 @@ export default function BillingView({ products = [], categories = [], settings, 
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      const initialGst = product.gst_percentage !== undefined ? product.gst_percentage : (settings?.tax_percentage ?? 5.0);
+      return [...prev, { ...product, quantity: 1, gst_percentage: initialGst }];
     });
+  };
+
+  const updateItemGst = (productId, newGst) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.id === productId ? { ...item, gst_percentage: newGst } : item
+      )
+    );
   };
 
   const updateQuantity = (productId, delta) => {
@@ -87,9 +96,18 @@ export default function BillingView({ products = [], categories = [], settings, 
   const subtotal = cart.reduce((acc, item) => acc + item.selling_price * item.quantity, 0);
   const totalCost = cart.reduce((acc, item) => acc + item.cost_price * item.quantity, 0);
   const discountAmount = Math.min(subtotal, Math.max(0, parseFloat(discount) || 0));
+  const discountRatio = subtotal > 0 ? (subtotal - discountAmount) / subtotal : 1;
+
+  // Itemized GST calculation
+  const totalTaxAmount = cart.reduce((sum, item) => {
+    const itemSubtotal = item.selling_price * item.quantity;
+    const itemTaxable = itemSubtotal * discountRatio;
+    const pct = parseFloat(item.gst_percentage) || 0;
+    return sum + (itemTaxable * (pct / 100));
+  }, 0);
+
   const taxableAmount = Math.max(0, subtotal - discountAmount);
-  const taxAmount = (taxableAmount * (taxPercentage / 100));
-  const grandTotal = taxableAmount + taxAmount;
+  const grandTotal = taxableAmount + totalTaxAmount;
   const estimatedProfit = taxableAmount - totalCost;
 
   // Checkout submission
@@ -100,7 +118,11 @@ export default function BillingView({ products = [], categories = [], settings, 
       setError('');
 
       const orderPayload = {
-        items: cart.map((i) => ({ id: i.id, quantity: i.quantity })),
+        items: cart.map((i) => ({
+          id: i.id,
+          quantity: i.quantity,
+          gst_percentage: parseFloat(i.gst_percentage) || 0,
+        })),
         customer_name: customerName,
         customer_phone: customerPhone,
         discount_amount: discountAmount,
@@ -321,52 +343,108 @@ export default function BillingView({ products = [], categories = [], settings, 
                   <p className="text-[11px] text-slate-600">Click products on the left to add items.</p>
                 </div>
               ) : (
-                cart.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-2.5 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-lg">{item.image_emoji}</span>
-                      <div className="truncate">
-                        <p className="font-semibold text-slate-200 truncate m-0">{item.name}</p>
-                        <p className="text-[11px] text-indigo-400 font-mono m-0">
-                          {currency}{item.selling_price} × {item.quantity}
+                cart.map((item) => {
+                  const itemSubtotal = item.selling_price * item.quantity;
+                  const itemTaxable = itemSubtotal * discountRatio;
+                  const itemGst = parseFloat(item.gst_percentage) || 0;
+                  const itemTax = itemTaxable * (itemGst / 100);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3 bg-slate-800/70 rounded-2xl border border-slate-700/70 space-y-2 text-xs"
+                    >
+                      {/* Top Row: Product details, Qty, Subtotal & Delete */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-lg">{item.image_emoji}</span>
+                          <div className="truncate">
+                            <p className="font-semibold text-slate-200 truncate m-0">{item.name}</p>
+                            <p className="text-[11px] text-indigo-400 font-mono m-0">
+                              {currency}{item.selling_price} × {item.quantity}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Qty Controls */}
+                        <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700">
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, -1)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="w-5 text-center font-bold text-white font-mono">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, 1)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <p className="font-bold text-white font-mono min-w-[50px] text-right m-0">
+                          {currency}{itemSubtotal.toFixed(2)}
                         </p>
+
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(item.id)}
+                          className="text-slate-500 hover:text-rose-400 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Bottom Row: Editable GST % for this product */}
+                      <div className="pt-2 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-1.5 bg-slate-900/60 px-2.5 py-1.5 rounded-xl">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                            GST:
+                          </span>
+                          <div className="relative inline-flex items-center">
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              max="100"
+                              value={item.gst_percentage ?? 0}
+                              onChange={(e) => updateItemGst(item.id, e.target.value)}
+                              className="w-12 px-1 py-0.5 bg-slate-800 border border-slate-700 rounded text-center text-xs font-mono font-bold text-amber-300 focus:outline-none focus:border-amber-500"
+                            />
+                            <span className="text-[10px] text-slate-400 ml-1">%</span>
+                          </div>
+
+                          {/* Quick GST Preset Chips */}
+                          <div className="flex items-center gap-0.5 ml-1">
+                            {[0, 5, 12, 18, 28].map((pct) => (
+                              <button
+                                key={pct}
+                                type="button"
+                                onClick={() => updateItemGst(item.id, pct)}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                                  Number(item.gst_percentage) === pct
+                                    ? 'bg-amber-500/25 border border-amber-500/50 text-amber-300 font-bold'
+                                    : 'text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700'
+                                }`}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] text-slate-300 font-mono">
+                          Tax: <strong className="text-amber-400">+{currency}{itemTax.toFixed(2)}</strong>
+                        </span>
                       </div>
                     </div>
-
-                    {/* Qty Controls */}
-                    <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700">
-                      <button
-                        onClick={() => updateQuantity(item.id, -1)}
-                        className="text-slate-400 hover:text-white"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="w-5 text-center font-bold text-white font-mono">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateQuantity(item.id, 1)}
-                        className="text-slate-400 hover:text-white"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    <p className="font-bold text-white font-mono min-w-[50px] text-right m-0">
-                      {currency}{(item.selling_price * item.quantity).toFixed(2)}
-                    </p>
-
-                    <button
-                      onClick={() => removeFromCart(item.id)}
-                      className="text-slate-500 hover:text-rose-400 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -453,8 +531,8 @@ export default function BillingView({ products = [], categories = [], settings, 
               </div>
 
               <div className="flex justify-between text-slate-400">
-                <span>Tax ({taxPercentage}%)</span>
-                <span className="font-mono text-white">+{currency}{taxAmount.toFixed(2)}</span>
+                <span>GST / Tax (Itemized)</span>
+                <span className="font-mono text-amber-400 font-bold">+{currency}{totalTaxAmount.toFixed(2)}</span>
               </div>
 
               <div className="pt-2 border-t border-slate-700 flex justify-between items-center text-sm font-black text-white">
