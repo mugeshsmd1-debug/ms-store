@@ -1,49 +1,44 @@
-import { localStore } from './localStore';
-import { firebaseStore } from './firebaseStore';
-import {
-  isFirebaseConfigured,
-  getFirebaseConfig,
-  saveFirebaseConfig,
-  clearFirebaseConfig
-} from './firebase';
-
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
-let useLocalFallback = false;
+const SESSION_KEY = 'ms_store_active_user';
 
-const getActiveStore = () => (isFirebaseConfigured() ? firebaseStore : localStore);
-
-async function requestWithFallback(path, options = {}, fallbackFn) {
-  // If Firebase is configured, use Firebase directly for cloud data sync across devices
-  if (isFirebaseConfigured()) {
-    return fallbackFn();
+function getSessionUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
+}
 
-  if (useLocalFallback) {
-    return fallbackFn();
+function setSessionUser(user) {
+  try {
+    if (user) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch (e) {
+    console.error('Failed to store session:', e);
   }
+}
 
-  const currentUser = localStore.getCurrentUser();
+async function request(path, options = {}) {
+  const currentUser = getSessionUser();
   const headers = {
+    'Content-Type': 'application/json',
     ...(options.headers || {}),
     ...(currentUser?.email ? { 'x-user-email': currentUser.email } : {}),
   };
-  const enrichedOptions = { ...options, headers };
 
+  const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(`${API_BASE}${path}`, enrichedOptions);
-    
-    // Check if response is valid JSON from backend
+    const res = await fetch(url, { ...options, headers });
     const contentType = res.headers.get('content-type') || '';
-    if (!res.ok && res.status === 404) {
-      console.warn(`Backend endpoint ${path} returned 404. Switching to persistent storage.`);
-      useLocalFallback = true;
-      return fallbackFn();
-    }
 
     if (!contentType.includes('application/json')) {
-      console.warn(`Backend endpoint ${path} returned non-JSON. Switching to persistent storage.`);
-      useLocalFallback = true;
-      return fallbackFn();
+      throw new Error(
+        `Backend server returned non-JSON response from ${path}. If you are on Netlify, please ensure your backend URL is set via VITE_API_URL.`
+      );
     }
 
     const data = await res.json();
@@ -52,37 +47,61 @@ async function requestWithFallback(path, options = {}, fallbackFn) {
     }
     return data;
   } catch (err) {
-    if (!useLocalFallback && (err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
-      console.warn('Backend server is unreachable. Seamlessly activating storage engine.');
-      useLocalFallback = true;
-      return fallbackFn();
+    if (err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      throw new Error(
+        `Cannot connect to MS Store backend server at ${API_BASE}. Please verify your cloud backend is online.`
+      );
     }
     throw err;
   }
 }
 
 export const api = {
-  // Firebase configuration status
-  isFirebaseConfigured,
-  getFirebaseConfig,
-  saveFirebaseConfig,
-  clearFirebaseConfig,
+  // Session Authentication
+  getCurrentUser() {
+    return getSessionUser();
+  },
+
+  async signup(userData) {
+    const data = await request('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+    if (data?.user) {
+      setSessionUser(data.user);
+    }
+    return data.user;
+  },
+
+  async login(email, password) {
+    const data = await request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    if (data?.user) {
+      setSessionUser(data.user);
+    }
+    return data.user;
+  },
+
+  async logout() {
+    try {
+      await request('/auth/logout', { method: 'POST' });
+    } catch {}
+    setSessionUser(null);
+    return { success: true };
+  },
 
   // Settings
   async getSettings() {
-    return requestWithFallback('/settings', {}, () => getActiveStore().getSettings());
+    return request('/settings');
   },
 
   async updateSettings(settings) {
-    return requestWithFallback(
-      '/settings',
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      },
-      () => getActiveStore().updateSettings(settings)
-    );
+    return request('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
   },
 
   // Products
@@ -92,72 +111,45 @@ export const api = {
     if (params.category && params.category !== 'All') query.append('category', params.category);
     if (params.lowStockOnly) query.append('lowStockOnly', 'true');
 
-    return requestWithFallback(
-      `/products?${query.toString()}`,
-      {},
-      () => getActiveStore().getProducts(params)
-    );
+    const qs = query.toString();
+    return request(`/products${qs ? '?' + qs : ''}`);
   },
 
   async getCategories() {
-    return requestWithFallback('/products/categories', {}, () => getActiveStore().getCategories());
+    return request('/products/categories');
   },
 
   async createProduct(productData) {
-    return requestWithFallback(
-      '/products',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productData),
-      },
-      () => getActiveStore().createProduct(productData)
-    );
+    return request('/products', {
+      method: 'POST',
+      body: JSON.stringify(productData),
+    });
   },
 
   async updateProduct(id, productData) {
-    return requestWithFallback(
-      `/products/${id}`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productData),
-      },
-      () => getActiveStore().updateProduct(id, productData)
-    );
+    return request(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData),
+    });
   },
 
   async adjustStock(id, data) {
-    return requestWithFallback(
-      `/products/${id}/stock`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      },
-      () => getActiveStore().adjustStock(id, data)
-    );
+    return request(`/products/${id}/stock`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   async deleteProduct(id) {
-    return requestWithFallback(
-      `/products/${id}`,
-      { method: 'DELETE' },
-      () => getActiveStore().deleteProduct(id)
-    );
+    return request(`/products/${id}`, { method: 'DELETE' });
   },
 
   // Orders / Billing
   async createOrder(orderData) {
-    return requestWithFallback(
-      '/orders',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData),
-      },
-      () => getActiveStore().createOrder(orderData)
-    );
+    return request('/orders', {
+      method: 'POST',
+      body: JSON.stringify(orderData),
+    });
   },
 
   async getOrders(params = {}) {
@@ -165,90 +157,15 @@ export const api = {
     if (params.limit) query.append('limit', params.limit);
     if (params.offset) query.append('offset', params.offset);
 
-    return requestWithFallback(
-      `/orders?${query.toString()}`,
-      {},
-      () => getActiveStore().getOrders(params)
-    );
+    const qs = query.toString();
+    return request(`/orders${qs ? '?' + qs : ''}`);
   },
 
   async getOrderById(id) {
-    return requestWithFallback(`/orders/${id}`, {}, () => getActiveStore().getOrderById(id));
+    return request(`/orders/${id}`);
   },
 
-  // User Authentication & Account Registry
-  async getCurrentUser() {
-    if (isFirebaseConfigured()) {
-      return firebaseStore.getCurrentUser();
-    }
-    return requestWithFallback('/auth/me', {}, () => localStore.getCurrentUser());
-  },
-
-  async signup(userData) {
-    if (isFirebaseConfigured()) {
-      return firebaseStore.signup(userData);
-    }
-    return requestWithFallback(
-      '/auth/signup',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
-      },
-      () => localStore.signup(userData)
-    );
-  },
-
-  async login(email, password) {
-    if (isFirebaseConfigured()) {
-      return firebaseStore.login(email, password);
-    }
-    return requestWithFallback(
-      '/auth/login',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      },
-      () => localStore.login(email, password)
-    );
-  },
-
-  async logout() {
-    if (isFirebaseConfigured()) {
-      return firebaseStore.logout();
-    }
-    localStore.logout();
-    return requestWithFallback(
-      '/auth/logout',
-      { method: 'POST' },
-      () => ({ success: true })
-    );
-  },
-
-  // Legacy auth compatibility
-  async getAuth() {
-    return this.getCurrentUser();
-  },
-
-  async saveAuth(authData) {
-    return this.signup(authData);
-  },
-
-  async clearAuth() {
-    return this.logout();
-  },
-
-  // Wipe all store data to start fresh (Zero dummy data)
-  async clearAllData() {
-    return requestWithFallback(
-      '/system/reset',
-      { method: 'POST' },
-      () => getActiveStore().clearAllData()
-    );
-  },
-
-  // Profit and Loss Analytics (Multi-horizon: calendar date, month, year, today, week, all)
+  // Analytics & PnL
   async getPnL(params = 'all') {
     let queryString = '';
     if (typeof params === 'string') {
@@ -263,10 +180,11 @@ export const api = {
       queryString = q.toString();
     }
 
-    return requestWithFallback(
-      `/analytics/pnl${queryString ? '?' + queryString : ''}`,
-      {},
-      () => getActiveStore().getPnL(params)
-    );
+    return request(`/analytics/pnl${queryString ? '?' + queryString : ''}`);
+  },
+
+  // Factory Reset (Zero Dummy Data)
+  async clearAllData() {
+    return request('/system/reset', { method: 'POST' });
   },
 };

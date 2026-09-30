@@ -8,20 +8,15 @@ import {
   ShieldCheck,
   KeyRound,
   Sparkles,
-  ArrowRight,
   LogIn,
   UserPlus,
   AlertCircle,
   Eye,
-  EyeOff,
-  Cloud,
-  Smartphone
+  EyeOff
 } from 'lucide-react';
 import { api } from '../services/api';
-import { isFirebaseConfigured } from '../services/firebase';
 
-export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
-  const isCloudActive = isFirebaseConfigured();
+export default function AuthModal({ onAuthenticated }) {
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'signup'
 
   // Login form state
@@ -52,7 +47,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
     const password = loginPassword.trim();
 
     if (!email) {
-      setError('Please enter your email ID.');
+      setError('Please enter your email address.');
       return;
     }
     if (!password) {
@@ -65,14 +60,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
       const userSession = await api.login(email, password);
       onAuthenticated(userSession);
     } catch (err) {
-      const msg = err.message || 'Login failed.';
-      if (!isCloudActive && (msg.includes('No registered account') || msg.includes('Invalid email'))) {
-        setError(
-          'Account not found on this device. If you registered on your PC, click "Connect Mobile Sync" above to connect Firebase and sync your account!'
-        );
-      } else {
-        setError(msg);
-      }
+      setError(err.message || 'Login failed. Please verify your credentials.');
     } finally {
       setLoading(false);
     }
@@ -91,7 +79,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
     const phone = signupData.phone.trim();
 
     if (!email || !email.includes('@')) {
-      setError('Please enter a valid Gmail / Email address.');
+      setError('Please enter a valid email address (e.g. name@gmail.com).');
       return;
     }
     if (!password || password.length < 4) {
@@ -131,7 +119,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-20 bg-indigo-500/20 blur-3xl rounded-full pointer-events-none" />
 
         {/* Top Header Logo */}
-        <div className="flex flex-col items-center text-center mb-4">
+        <div className="flex flex-col items-center text-center mb-5">
           <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 text-white shadow-xl shadow-indigo-600/30 mb-2 preserve-3d">
             <Sparkles className="w-7 h-7 animate-pulse" />
           </div>
@@ -141,34 +129,8 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
           <p className="text-xs text-slate-400 mt-1 max-w-sm m-0">
             {activeTab === 'login'
               ? 'Log in with your Email ID and Password to load your store data.'
-              : 'Sign up to create your store ID. All your products and invoices will be saved under this account.'}
+              : 'Sign up once to create your store ID. Access your store from any device.'}
           </p>
-        </div>
-
-        {/* Mobile & Cloud Sync Status Banner */}
-        <div className="mb-4 flex items-center justify-between p-2.5 rounded-2xl bg-slate-800/70 border border-slate-700/80 text-xs">
-          <div className="flex items-center gap-2 truncate">
-            <Cloud className={`w-4 h-4 flex-shrink-0 ${isCloudActive ? 'text-emerald-400' : 'text-amber-400'}`} />
-            <span className="truncate">
-              {isCloudActive ? (
-                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Cloud Synced (Mobile + PC)
-                </span>
-              ) : (
-                <span className="text-slate-300">Device Local Mode</span>
-              )}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={onOpenCloudSync}
-            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold text-[11px] underline pl-2 flex-shrink-0"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>{isCloudActive ? 'Config' : 'Sync Mobile 📱'}</span>
-          </button>
         </div>
 
         {/* Tabs: Log In vs Sign Up */}
@@ -265,7 +227,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
               className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.98] disabled:opacity-50"
             >
               <LogIn className="w-4 h-4" />
-              <span>{loading ? 'Logging in...' : 'Log In & Load My Store Data'}</span>
+              <span>{loading ? 'Logging in...' : 'Log In & Open Store'}</span>
             </button>
 
             <div className="pt-2 text-center text-xs text-slate-400">
@@ -404,7 +366,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
             </div>
 
             <p className="text-[11px] text-slate-400 pt-1 m-0">
-              🔒 Your products, inventory quantities, bills, and profit reports are saved safely under your registered Email ID.
+              🔒 Your inventory items, bills, and profit reports are saved safely under your registered Email ID.
             </p>
 
             <button
@@ -413,7 +375,7 @@ export default function AuthModal({ onAuthenticated, onOpenCloudSync }) {
               className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.98] disabled:opacity-50"
             >
               <UserPlus className="w-4 h-4" />
-              <span>{loading ? 'Creating Account...' : 'Sign Up & Initialize Store ID'}</span>
+              <span>{loading ? 'Creating Account...' : 'Sign Up & Open Terminal'}</span>
             </button>
 
             <div className="pt-2 text-center text-xs text-slate-400">

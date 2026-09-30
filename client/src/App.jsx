@@ -5,7 +5,6 @@ import InventoryView from './views/InventoryView';
 import ProfitLossView from './views/ProfitLossView';
 import SettingsView from './views/SettingsView';
 import AuthModal from './components/AuthModal';
-import CloudSyncModal from './components/CloudSyncModal';
 import { api } from './services/api';
 
 export default function App() {
@@ -13,19 +12,17 @@ export default function App() {
   const [settings, setSettings] = useState(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => api.getCurrentUser());
   const [loading, setLoading] = useState(true);
-  const [showCloudSync, setShowCloudSync] = useState(false);
 
-  // Fetch all initial store data for the active logged-in user
+  // Fetch all initial store data from backend for the logged-in user
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      const currentUser = await api.getCurrentUser();
+      const currentUser = api.getCurrentUser();
       setUser(currentUser);
 
       if (!currentUser?.email) {
-        // No active user session - AuthModal will be displayed
         setLoading(false);
         return;
       }
@@ -39,7 +36,7 @@ export default function App() {
       setProducts(productsData);
       setCategories(categoriesData);
     } catch (err) {
-      console.error('Failed to load store data:', err);
+      console.error('Failed to load store data from backend:', err);
     } finally {
       setLoading(false);
     }
@@ -62,13 +59,13 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // When user successfully signs up or logs in
+  // When user signs up or logs in
   const handleAuthenticated = async (userSession) => {
     setUser(userSession);
     await loadInitialData();
   };
 
-  // When user logs out to switch accounts
+  // When user logs out
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -86,11 +83,11 @@ export default function App() {
     (p) => p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0
   ).length;
 
-  if (loading && !user && !settings) {
+  if (loading && user && !settings) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
         <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-sm font-semibold tracking-wide">Loading MS Store POS & Inventory Engine...</p>
+        <p className="text-sm font-semibold tracking-wide">Connecting to MS Store Cloud Backend...</p>
       </div>
     );
   }
@@ -99,14 +96,7 @@ export default function App() {
   if (!user?.email) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-        <AuthModal
-          onAuthenticated={handleAuthenticated}
-          onOpenCloudSync={() => setShowCloudSync(true)}
-        />
-        <CloudSyncModal
-          isOpen={showCloudSync}
-          onClose={() => setShowCloudSync(false)}
-        />
+        <AuthModal onAuthenticated={handleAuthenticated} />
       </div>
     );
   }
@@ -121,7 +111,6 @@ export default function App() {
         settings={settings}
         user={user}
         onLogout={handleLogout}
-        onOpenCloudSync={() => setShowCloudSync(true)}
       />
 
       {/* Main Tab View Content */}
@@ -158,16 +147,9 @@ export default function App() {
             user={user}
             onResetData={loadInitialData}
             onLogout={handleLogout}
-            onOpenCloudSync={() => setShowCloudSync(true)}
           />
         )}
       </main>
-
-      {/* Cloud Sync Modal */}
-      <CloudSyncModal
-        isOpen={showCloudSync}
-        onClose={() => setShowCloudSync(false)}
-      />
 
       {/* Footer */}
       <footer className="no-print border-t border-slate-800/80 bg-slate-950/60 py-4 text-center text-xs text-slate-500">

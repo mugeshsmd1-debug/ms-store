@@ -6,11 +6,8 @@ import {
   Settings,
   AlertTriangle,
   Sparkles,
-  LogOut,
-  Cloud,
-  CheckCircle2
+  LogOut
 } from 'lucide-react';
-import { isFirebaseConfigured } from '../services/firebase';
 
 export default function Navbar({
   activeTab,
@@ -19,11 +16,8 @@ export default function Navbar({
   lowStockCount = 0,
   settings,
   user,
-  onLogout,
-  onOpenCloudSync
+  onLogout
 }) {
-  const isCloudActive = isFirebaseConfigured();
-
   const tabs = [
     { id: 'billing', label: 'POS Billing', icon: ShoppingBag, badge: cartCount > 0 ? cartCount : null, badgeColor: 'bg-indigo-500' },
     { id: 'inventory', label: 'Stock & Inventory', icon: Package, badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
@@ -85,30 +79,8 @@ export default function Navbar({
             })}
           </nav>
 
-          {/* Right Section: Cloud Sync status, Low Stock, & User Profile */}
+          {/* Right Section: Low Stock Warning & Owner Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Cloud Sync Status Indicator Button */}
-            <button
-              type="button"
-              onClick={onOpenCloudSync}
-              title={isCloudActive ? 'Cloud Sync Active (Firebase) - Synced across PC & Mobile' : 'Local Storage Mode - Click to connect Cloud Sync for mobile access'}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
-                isCloudActive
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
-              }`}
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {isCloudActive ? 'Cloud Synced' : 'Sync Mobile'}
-              </span>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isCloudActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                }`}
-              />
-            </button>
-
             {lowStockCount > 0 && (
               <div
                 onClick={() => setActiveTab('inventory')}
